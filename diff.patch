@@ -1,0 +1,88 @@
+core/src/banking_stage/transaction_scheduler/prio_graph_scheduler.rs --- 1/3 --- Rust
+ 25  25     },
+ 26  26     crossbeam_channel::{Receiver, Sender},
+ 27  27     prio_graph::{AccessKind, GraphNode, PrioGraph},
+ ..  28     smallvec::SmallVec,
+ 28  29     solana_cost_model::block_cost_limits::MAX_BLOCK_UNITS,
+ 29  30     solana_measure::measure_us,
+ 30  31     solana_pubkey::Pubkey,
+
+core/src/banking_stage/transaction_scheduler/prio_graph_scheduler.rs --- 2/3 --- Rust
+163         let mut total_filter_time_us = Saturating::<u64>(0);      164         let mut total_filter_time_us = Saturating::<u64>(0);
+164                                                                   165 
+165         let mut window_budget = self.config.look_ahead_window_siz 166         let mut window_budget = self.config.look_ahead_window_siz
+... e;                                                                ... e;
+...                                                                   167         const MAX_FILTER_CHUNK_SIZE: usize = 128;
+...                                                                   168         let mut filter_array = [true; MAX_FILTER_CHUNK_SIZE];
+...                                                                   169         let mut ids = Vec::with_capacity(MAX_FILTER_CHUNK_SIZE);
+...                                                                   170         let mut remove_ids = Vec::with_capacity(MAX_FILTER_CHUNK_
+...                                                                   ... SIZE);
+...                                                                   171 
+166         let mut chunked_pops = |container: &mut S,                172         let mut chunked_pops = |container: &mut S,
+167                                 prio_graph: &mut PrioGraph<_, _,  173                                 prio_graph: &mut PrioGraph<_, _, 
+... _, _>,                                                            ... _, _>,
+168                                 window_budget: &mut usize| {      174                                 window_budget: &mut usize| {
+169             while *window_budget > 0 {                            175             while *window_budget > 0 {
+170                 const MAX_FILTER_CHUNK_SIZE: usize = 128;         ... 
+171                 let mut filter_array = [true; MAX_FILTER_CHUNK_SI ... 
+... ZE];                                                              ... 
+172                 let mut ids = Vec::with_capacity(MAX_FILTER_CHUNK 176                 ids.clear();
+... _SIZE);                                                           ... 
+173                 let mut txs = Vec::with_capacity(MAX_FILTER_CHUNK 177                 remove_ids.clear();
+... _SIZE);                                                           ... 
+174                                                                   178 
+175                 let chunk_size = (*window_budget).min(MAX_FILTER_ 179                 let chunk_size = (*window_budget).min(MAX_FILTER_
+... CHUNK_SIZE);                                                      ... CHUNK_SIZE);
+176                 for _ in 0..chunk_size {                          180                 for _ in 0..chunk_size {
+
+core/src/banking_stage/transaction_scheduler/prio_graph_scheduler.rs --- 3/3 --- Rust
+182                 }                                                 186                 }
+183                 *window_budget = window_budget.saturating_sub(chu 187                 *window_budget = window_budget.saturating_sub(chu
+... nk_size);                                                         ... nk_size);
+184                                                                   188 
+...                                                                   189                 {
+...                                                                   190                     let mut txs: SmallVec<[&Tx; MAX_FILTER_CHUNK_
+...                                                                   ... SIZE]> = SmallVec::new();
+185                 ids.iter().for_each(|id| {                        191                     ids.iter().for_each(|id| {
+186                     let transaction = container.get_transaction(i 192                         let transaction = container.get_transacti
+... d.id).unwrap();                                                   ... on(id.id).unwrap();
+187                     txs.push(transaction);                        193                         txs.push(transaction);
+188                 });                                               194                     });
+...                                                                   195 
+...                                                                   196                     for entry in filter_array.iter_mut().take(ids
+...                                                                   ... .len()) {
+...                                                                   197                         *entry = true;
+...                                                                   198                     }
+189                                                                   199 
+190                 let (_, filter_us) =                              200                     let (_, filter_us) =
+191                     measure_us!(pre_graph_filter(&txs, &mut filte 201                         measure_us!(pre_graph_filter(&txs, &mut f
+... r_array[..chunk_size]));                                          ... ilter_array[..ids.len()]));
+192                 total_filter_time_us += filter_us;                202                     total_filter_time_us += filter_us;
+193                                                                   203 
+194                 for (id, filter_result) in ids.iter().zip(&filter 204                     for (index, (id, filter_result)) in
+... _array[..chunk_size]) {                                           ... 
+...                                                                   205                         ids.iter().zip(&filter_array[..ids.len()]
+...                                                                   ... ).enumerate()
+...                                                                   206                     {
+195                     if *filter_result {                           207                         if *filter_result {
+196                         let transaction = container.get_transacti ... 
+... on(id.id).unwrap();                                               ... 
+197                         prio_graph.insert_transaction(            208                             prio_graph.insert_transaction(
+198                             *id,                                  209                                 *id,
+199                             Self::get_transaction_account_access( 210                                 Self::get_transaction_account_acc
+... transaction),                                                     ... ess(txs[index]),
+200                         );                                        211                             );
+201                     } else {                                      212                         } else {
+202                         num_filtered_out += 1;                    213                             num_filtered_out += 1;
+203                         container.remove_by_id(id.id);            214                             remove_ids.push(id.id);
+204                     }                                             215                         }
+205                 }                                                 216                     }
+...                                                                   217                 }
+...                                                                   218 
+...                                                                   219                 for id in remove_ids.drain(..) {
+...                                                                   220                     container.remove_by_id(id);
+...                                                                   221                 }
+206                                                                   222 
+207                 if ids.len() != chunk_size {                      223                 if ids.len() != chunk_size {
+208                     break;                                        224                     break;
+

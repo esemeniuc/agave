@@ -20,6 +20,7 @@ use {
     agave_scheduling_utils::thread_aware_account_locks::{
         ThreadAwareAccountLocks, ThreadId, ThreadSet, TryLockError,
     },
+    arrayvec::ArrayVec,
     crossbeam_channel::{Receiver, Sender},
     prio_graph::{AccessKind, GraphNode, PrioGraph},
     solana_cost_model::block_cost_limits::MAX_BLOCK_UNITS,
@@ -29,6 +30,9 @@ use {
     solana_svm_transaction::svm_message::SVMMessage,
     std::num::Saturating,
 };
+use crate::banking_stage::scheduler_messages::TransactionId;
+
+const MAX_FILTER_CHUNK_SIZE: usize = 128;
 
 #[inline(always)]
 fn passthrough_priority(
@@ -150,7 +154,7 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for PrioGraphScheduler<Tx> {
         // These transactions cannot be scheduled until some conflicting work is completed.
         // However, the scheduler should not allow other transactions that conflict with
         // these transactions to be scheduled before them.
-        let mut unschedulable_ids = Vec::new();
+        let mut unschedulable_ids = Vec::with_capacity(self.config.look_ahead_window_size);
         let mut blocking_locks = ReadWriteAccountSet::default();
 
         // Track metrics on filter.
@@ -158,14 +162,14 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for PrioGraphScheduler<Tx> {
         let mut total_filter_time_us = Saturating::<u64>(0);
 
         let mut window_budget = self.config.look_ahead_window_size;
+        let mut filter_array = [true; MAX_FILTER_CHUNK_SIZE];
+        let mut remove_ids: ArrayVec<TransactionId, MAX_FILTER_CHUNK_SIZE> = ArrayVec::new();
         let mut chunked_pops = |container: &mut S,
                                 prio_graph: &mut PrioGraph<_, _, _, _>,
                                 window_budget: &mut usize| {
             while *window_budget > 0 {
-                const MAX_FILTER_CHUNK_SIZE: usize = 128;
-                let mut filter_array = [true; MAX_FILTER_CHUNK_SIZE];
-                let mut ids = Vec::with_capacity(MAX_FILTER_CHUNK_SIZE);
-                let mut txs = Vec::with_capacity(MAX_FILTER_CHUNK_SIZE);
+                let mut ids: ArrayVec<TransactionPriorityId, MAX_FILTER_CHUNK_SIZE> = ArrayVec::new();
+                remove_ids.clear();
 
                 let chunk_size = (*window_budget).min(MAX_FILTER_CHUNK_SIZE);
                 for _ in 0..chunk_size {
@@ -176,28 +180,42 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for PrioGraphScheduler<Tx> {
                     }
                 }
                 *window_budget = window_budget.saturating_sub(chunk_size);
+                if ids.is_empty() {
+                    break;
+                }
 
+                let mut txs: ArrayVec<&Tx, MAX_FILTER_CHUNK_SIZE> = ArrayVec::new();
                 ids.iter().for_each(|id| {
                     let transaction = container.get_transaction(id.id).unwrap();
                     txs.push(transaction);
                 });
 
+                filter_array[..ids.len()].fill(true);
+
                 let (_, filter_us) =
-                    measure_us!(pre_graph_filter(&txs, &mut filter_array[..chunk_size]));
+                    measure_us!(pre_graph_filter(&txs, &mut filter_array[..ids.len()]));
                 total_filter_time_us += filter_us;
 
-                for (id, filter_result) in ids.iter().zip(&filter_array[..chunk_size]) {
+                for (index, (id, filter_result)) in
+                    ids.iter().zip(&filter_array[..ids.len()]).enumerate()
+                {
                     if *filter_result {
-                        let transaction = container.get_transaction(id.id).unwrap();
                         prio_graph.insert_transaction(
                             *id,
-                            Self::get_transaction_account_access(transaction),
+                            Self::get_transaction_account_access(txs[index]),
                         );
                     } else {
                         num_filtered_out += 1;
+
                         container.remove_by_id(id.id);
+                        // remove_ids.push(id.id);
                     }
                 }
+                drop(txs);
+
+                // for id in remove_ids.drain(..) {
+                //     container.remove_by_id(id);
+                // }
 
                 if ids.len() != chunk_size {
                     break;
@@ -214,9 +232,8 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for PrioGraphScheduler<Tx> {
             self.common.batches.is_empty(),
             "batches must start empty for scheduling"
         );
-        let mut unblock_this_batch = Vec::with_capacity(
-            self.common.consume_work_senders.len() * self.config.target_transactions_per_batch,
-        );
+        let mut unblock_this_batch =
+            Vec::with_capacity(num_threads * self.config.target_transactions_per_batch);
         let mut num_scanned: usize = 0;
         let mut num_scheduled = Saturating::<usize>(0);
         let mut num_sent = Saturating::<usize>(0);
