@@ -206,16 +206,14 @@ impl<Tx: TransactionWithMeta> Scheduler<Tx> for PrioGraphScheduler<Tx> {
                         );
                     } else {
                         num_filtered_out += 1;
-
-                        container.remove_by_id(id.id);
-                        // remove_ids.push(id.id);
+                        remove_ids.push(id.id);
                     }
                 }
                 drop(txs);
 
-                // for id in remove_ids.drain(..) {
-                //     container.remove_by_id(id);
-                // }
+                for id in remove_ids.drain(..) {
+                    container.remove_by_id(id);
+                }
 
                 if ids.len() != chunk_size {
                     break;
