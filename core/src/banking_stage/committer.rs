@@ -1,6 +1,7 @@
 use {
     super::leader_slot_timing_metrics::LeaderExecuteAndCommitTimings,
     itertools::Itertools,
+    solana_account::ReadableAccount,
     solana_cost_model::cost_model::CostModel,
     solana_ledger::{
         blockstore_processor::TransactionStatusSender,
@@ -72,7 +73,7 @@ fn transaction_error_to_code(err: &TransactionError) -> i32 {
 }
 
 #[no_mangle]
-pub extern "C" fn fd_ext_bank_execute_and_commit_bundle(bank: *const std::ffi::c_void, txns: *const std::ffi::c_void, txn_count: u64, out_transaction_err: *mut i32, out_consumed_exec_cus: *mut u32, out_consumed_acct_data_cus: *mut u32, out_timestamps: *mut u64, out_tips: *mut u64) -> i32 {
+pub extern "C" fn fd_ext_bank_execute_and_commit_bundle(bank: *const std::ffi::c_void, txns: *const std::ffi::c_void, txn_count: u64, out_transaction_err: *mut i32, out_consumed_exec_cus: *mut u32, out_consumed_acct_data_cus: *mut u32, out_timestamps: *mut u64, out_tips: *mut u64, out_feepayer_balance_lamports: *mut u64, out_loaded_accounts_data_size: *mut u32) -> i32 {
     use solana_clock::MAX_PROCESSING_AGE;
     use std::sync::atomic::Ordering;
     use solana_bundle::bundle_execution::load_and_execute_bundle;
@@ -142,7 +143,7 @@ pub extern "C" fn fd_ext_bank_execute_and_commit_bundle(bank: *const std::ffi::c
         .flatten()
         .enumerate()
     {
-        let (consumed_cus, loaded_accounts_data_cost, tips) =
+        let (consumed_cus, loaded_accounts_data_cost, tips, feepayer_balance_lamports, loaded_accounts_data_size) =
             match &result {
                 Ok(Executed(tx)) => {
                     (
@@ -157,6 +158,8 @@ pub extern "C" fn fd_ext_bank_execute_and_commit_bundle(bank: *const std::ffi::c
                             .unwrap()
                             .checked_div(100)
                             .unwrap(),
+                        tx.loaded_transaction.accounts[0].1.lamports(),
+                        tx.loaded_transaction.loaded_accounts_data_size,
                     )
                 },
                 // Transactions must've have succeeded, and not be fee-only,
@@ -168,6 +171,8 @@ pub extern "C" fn fd_ext_bank_execute_and_commit_bundle(bank: *const std::ffi::c
         unsafe { *out_consumed_exec_cus.offset(i.try_into().unwrap()) = consumed_cus };
         unsafe { *out_consumed_acct_data_cus.offset(i.try_into().unwrap()) = loaded_accounts_data_cost };
         unsafe { *out_tips.offset(i.try_into().unwrap()) = tips };
+        unsafe { *out_feepayer_balance_lamports.offset(i.try_into().unwrap()) = feepayer_balance_lamports };
+        unsafe { *out_loaded_accounts_data_size.offset(i.try_into().unwrap()) = loaded_accounts_data_size };
     }
 
     // FIREDANCER: If any transaction in the bundle failed, we want to keep tips + CUs up to the point of failure
@@ -212,7 +217,7 @@ pub extern "C" fn fd_ext_bank_execute_and_commit_bundle(bank: *const std::ffi::c
 }
 
 #[no_mangle]
-pub extern "C" fn fd_ext_bank_load_and_execute_txns( bank: *const std::ffi::c_void, txns: *const std::ffi::c_void, txn_count: u64, out_processing_result: *mut i32, out_transaction_err: *mut i32, out_consumed_exec_cus: *mut u32, out_consumed_acct_data_cus: *mut u32, out_timestamps: *mut u64, out_tips: *mut u64 ) -> *mut std::ffi::c_void {
+pub extern "C" fn fd_ext_bank_load_and_execute_txns( bank: *const std::ffi::c_void, txns: *const std::ffi::c_void, txn_count: u64, out_processing_result: *mut i32, out_transaction_err: *mut i32, out_consumed_exec_cus: *mut u32, out_consumed_acct_data_cus: *mut u32, out_timestamps: *mut u64, out_tips: *mut u64, out_feepayer_balance_lamports: *mut u64, out_loaded_accounts_data_size: *mut u32 ) -> *mut std::ffi::c_void {
     use solana_svm_timings::ExecuteTimings;
     use solana_runtime::bank::LoadAndExecuteTransactionsOutput;
     use solana_runtime::transaction_batch::OwnedOrBorrowed;
@@ -284,9 +289,9 @@ pub extern "C" fn fd_ext_bank_load_and_execute_txns( bank: *const std::ffi::c_vo
     }
 
     for i in 0..txn_count {
-        let (processing_result, consumed_cus, loaded_accounts_data_cost, transaction_err, tips) =
+        let (processing_result, consumed_cus, loaded_accounts_data_cost, transaction_err, tips, feepayer_balance_lamports, loaded_accounts_data_size) =
             match &output.processing_results[i as usize] {
-                Err(err) => (0, 0u32, 0u32, transaction_error_to_code(&err), 0u64),
+                Err(err) => (0, 0u32, 0u32, transaction_error_to_code(&err), 0u64, 0u64, 0u32),
                 Ok(Executed(tx)) => {
                     (
                         FD_BANK_TRANSACTION_LANDED | FD_BANK_TRANSACTION_EXECUTED,
@@ -309,7 +314,13 @@ pub extern "C" fn fd_ext_bank_load_and_execute_txns( bank: *const std::ffi::c_vo
                                 .checked_div(100)
                                 .unwrap(),
                             Err(_err) => 0u64
-                        }
+                        },
+                        if tx.execution_details.status.is_ok() {
+                            tx.loaded_transaction.accounts[0].1.lamports()
+                        } else {
+                            tx.loaded_transaction.rollback_accounts.fee_payer().1.lamports()
+                        },
+                        tx.loaded_transaction.loaded_accounts_data_size,
                     )
                 },
                 Ok(FeesOnly(tx)) =>  (
@@ -320,7 +331,9 @@ pub extern "C" fn fd_ext_bank_load_and_execute_txns( bank: *const std::ffi::c_vo
                         &bank.feature_set,
                     ) as u32,
                     transaction_error_to_code( &tx.load_error ),
-                    0u64
+                    0u64,
+                    tx.rollback_accounts.fee_payer().1.lamports(),
+                    tx.rollback_accounts.data_size() as u32
                 )
             };
         unsafe { *out_processing_result.offset(i as isize) = processing_result };
@@ -328,6 +341,8 @@ pub extern "C" fn fd_ext_bank_load_and_execute_txns( bank: *const std::ffi::c_vo
         unsafe { *out_consumed_exec_cus.offset(i as isize) = consumed_cus };
         unsafe { *out_consumed_acct_data_cus.offset(i as isize) = loaded_accounts_data_cost };
         unsafe { *out_tips.offset(i as isize) = tips };
+        unsafe { *out_feepayer_balance_lamports.offset(i as isize) = feepayer_balance_lamports };
+        unsafe { *out_loaded_accounts_data_size.offset(i as isize) = loaded_accounts_data_size };
     }
 
     let load_and_execute_output: Box<LoadAndExecuteTransactionsOutput> = Box::new(output);
