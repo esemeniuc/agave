@@ -237,7 +237,7 @@ pub unsafe extern "C" fn fd_ext_bank_execute_and_commit_bundle(bank: *const std:
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn fd_ext_bank_load_and_execute_txns( bank: *const std::ffi::c_void, txns: *const std::ffi::c_void, txn_count: u64, out_processing_result: *mut i32, out_transaction_err: *mut i32, out_consumed_exec_cus: *mut u32, out_consumed_acct_data_cus: *mut u32, out_timestamps: *mut u64, out_tips: *mut u64, out_remove_simple_vote_from_cost_model: *mut i32, out_feepayer_balance_lamports: *mut u64, out_loaded_accounts_data_size: *mut u32 ) -> *mut std::ffi::c_void {
+pub unsafe extern "C" fn fd_ext_bank_load_and_execute_txns( bank: *const std::ffi::c_void, txns: *const std::ffi::c_void, txn_count: u64, drop_on_failure: i32, all_or_nothing: i32, out_processing_result: *mut i32, out_transaction_err: *mut i32, out_consumed_exec_cus: *mut u32, out_consumed_acct_data_cus: *mut u32, out_timestamps: *mut u64, out_tips: *mut u64, out_remove_simple_vote_from_cost_model: *mut i32, out_feepayer_balance_lamports: *mut u64, out_loaded_accounts_data_size: *mut u32 ) -> *mut std::ffi::c_void {
     use solana_svm_timings::ExecuteTimings;
     use solana_runtime::bank::LoadAndExecuteTransactionsOutput;
     use solana_runtime::transaction_batch::OwnedOrBorrowed;
@@ -303,8 +303,8 @@ pub unsafe extern "C" fn fd_ext_bank_load_and_execute_txns( bank: *const std::ff
             log_messages_bytes_limit: None,
             limit_to_load_programs: false,
             recording_config: ExecutionRecordingConfig::new_single_setting(transaction_status_sender_enabled),
-            drop_on_failure: false,
-            all_or_nothing: false,
+            drop_on_failure: drop_on_failure != 0,
+            all_or_nothing: all_or_nothing != 0,
             tip_accounts: Some(tip_accounts),
         }
     );
