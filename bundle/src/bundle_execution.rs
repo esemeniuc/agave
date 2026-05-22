@@ -4,7 +4,7 @@ use {
     solana_measure::{measure::Measure, measure_us},
     solana_runtime::{
         account_saver::collect_accounts_to_store,
-        bank::{Bank, LoadAndExecuteTransactionsOutput},
+        bank::{Bank, LoadAndExecuteTransactionsOutput, ProgramCacheForTxBatch},
         transaction_batch::TransactionBatch,
     },
     solana_runtime_transaction::runtime_transaction::RuntimeTransaction,
@@ -274,6 +274,8 @@ pub fn load_and_execute_bundle<'a, 'b>(
 
     let mut bundle_transaction_results = vec![];
     let mut metrics = BundleExecutionMetrics::default();
+    // Preserve program deploy/close effects across uncommitted bundle batches.
+    let mut program_cache_for_bundle = ProgramCacheForTxBatch::new(bank.slot());
 
     while chunk_start != txns.len() {
         // FIREDANCER: No max processing time since we are guaranteed to have
@@ -348,7 +350,7 @@ pub fn load_and_execute_bundle<'a, 'b>(
         metrics.execute_timings.details.ts_tx_load_end = 0;
 
         let (load_and_execute_transactions_output, load_execute_us) = measure_us!(bank
-            .load_and_execute_transactions(
+            .load_and_execute_transactions_with_program_cache(
                 &batch,
                 max_age,
                 &mut metrics.execute_timings,
@@ -365,6 +367,7 @@ pub fn load_and_execute_bundle<'a, 'b>(
                     all_or_nothing: true,
                     tip_accounts,
                 },
+                &mut program_cache_for_bundle,
             ));
         debug!(
             "bundle loaded_transactions: {:?}",
