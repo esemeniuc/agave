@@ -212,6 +212,7 @@ use {
     solana_nonce_account::{SystemAccountKind, get_system_account_kind},
     solana_program_runtime::sysvar_cache::SysvarCache,
 };
+pub use solana_program_runtime::loaded_programs::ProgramCacheForTxBatch;
 pub use {partitioned_epoch_rewards::KeyedRewardsAndNumPartitions, solana_reward_info::RewardType};
 
 /// FIREDANCER: Make sure SanitizedTransaction ABI doesn't change. This
@@ -3707,6 +3708,26 @@ impl Bank {
         error_counters: &mut TransactionErrorMetrics,
         processing_config: TransactionProcessingConfig,
     ) -> LoadAndExecuteTransactionsOutput {
+        let mut program_cache_for_tx_batch = ProgramCacheForTxBatch::new(self.slot);
+        self.load_and_execute_transactions_with_program_cache(
+            batch,
+            max_age,
+            timings,
+            error_counters,
+            processing_config,
+            &mut program_cache_for_tx_batch,
+        )
+    }
+
+    pub fn load_and_execute_transactions_with_program_cache(
+        &self,
+        batch: &TransactionBatch<impl TransactionWithMeta>,
+        max_age: usize,
+        timings: &mut ExecuteTimings,
+        error_counters: &mut TransactionErrorMetrics,
+        processing_config: TransactionProcessingConfig,
+        program_cache_for_tx_batch: &mut ProgramCacheForTxBatch,
+    ) -> LoadAndExecuteTransactionsOutput {
         let sanitized_txs = batch.sanitized_transactions();
 
         timings.details.ts_tx_preload_end = unsafe { std::arch::x86_64::_rdtsc() };
@@ -3739,15 +3760,16 @@ impl Bank {
             rent: self.rent_collector.rent.clone(),
         };
 
-        let sanitized_output = self
-            .transaction_processor
-            .load_and_execute_sanitized_transactions(
-                self,
-                sanitized_txs,
-                check_results,
-                &processing_environment,
-                &processing_config,
-            );
+        let sanitized_output =
+            self.transaction_processor
+                .load_and_execute_sanitized_transactions_with_program_cache(
+                    self,
+                    sanitized_txs,
+                    check_results,
+                    &processing_environment,
+                    &processing_config,
+                    program_cache_for_tx_batch,
+                );
 
         // Accumulate the errors returned by the batch processor.
         error_counters.accumulate(&sanitized_output.error_metrics);
