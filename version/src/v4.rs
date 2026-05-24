@@ -223,6 +223,10 @@ impl Version {
         &self.client
     }
 
+    pub fn set_client(&mut self, client: ClientId) {
+        self.client = client;
+    }
+
     pub fn prerelease(&self) -> &Prerelease {
         &self.prerelease
     }
