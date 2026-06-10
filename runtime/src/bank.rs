@@ -3025,11 +3025,16 @@ impl Bank {
         *self.rc.parent.write().unwrap() = None;
 
         let mut squash_cache_time = Measure::start("squash_cache_time");
-        self.status_cache
+        let purged_status_cache_entries = self
+            .status_cache
             .write()
             .unwrap()
             .add_roots(roots.iter().copied());
         squash_cache_time.stop();
+        // The write-lock guard (a temporary in the statement above) is already released; free
+        // the purged entries off-thread so neither the lock hold time nor squash_cache_ms
+        // includes the deallocation.
+        purged_status_cache_entries.drop_in_background();
 
         SquashTiming {
             squash_accounts_ms: squash_accounts_time.as_ms(),
