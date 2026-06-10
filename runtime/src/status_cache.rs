@@ -46,6 +46,86 @@ type SlotDeltaMap<T> = HashMap<Slot, Status<T>>;
 // construct a new one. Usually derived from a status cache's `SlotDeltaMap`
 pub type SlotDelta<T> = (Slot, bool, Status<T>);
 
+/// Entries evicted from the status cache by `purge_roots()`.
+///
+/// Freeing the purged nested maps is expensive (tens to hundreds of ms for a large cache,
+/// dominated by HashMap drop + allocator work). This opaque holder lets entries be unlinked from
+/// the cache under the write lock while the deallocation is deferred until this struct is
+/// dropped, which callers should do outside the lock's critical section.
+#[must_use = "dropping this frees the purged entries, which can be slow; drop it outside the \
+              status cache lock, ideally on a background thread"]
+#[derive(Debug)]
+pub struct PurgedStatusCacheEntries<T> {
+    cache: Vec<(Hash, (Slot, usize, KeyMap<T>))>,
+    slot_deltas: Vec<(Slot, Status<T>)>,
+}
+
+// Manual impl: derive(Default) would require T: Default, which the bank's
+// T = Result<(), TransactionError> doesn't satisfy.
+impl<T> Default for PurgedStatusCacheEntries<T> {
+    fn default() -> Self {
+        Self {
+            cache: Vec::new(),
+            slot_deltas: Vec::new(),
+        }
+    }
+}
+
+impl<T> PurgedStatusCacheEntries<T> {
+    pub fn is_empty(&self) -> bool {
+        self.cache.is_empty() && self.slot_deltas.is_empty()
+    }
+
+    pub fn num_blockhashes(&self) -> usize {
+        self.cache.len()
+    }
+
+    pub fn num_slot_deltas(&self) -> usize {
+        self.slot_deltas.len()
+    }
+}
+
+impl<T: Send + 'static> PurgedStatusCacheEntries<T> {
+    /// Free the purged entries on a short-lived background thread so the deallocation doesn't
+    /// run on the calling (replay) thread.
+    ///
+    /// Spawning happens at most once per set_root (~once per slot), so the per-spawn cost is
+    /// negligible. If spawning fails, the entries are freed inline.
+    pub fn drop_in_background(self) {
+        if self.is_empty() {
+            return;
+        }
+        // shuttle's sync primitives can't be dropped outside a shuttle execution, so free
+        // inline when the crate is compiled with shuttle types.
+        #[cfg(feature = "shuttle-test")]
+        drop(self);
+        #[cfg(not(feature = "shuttle-test"))]
+        {
+            let num_blockhashes = self.num_blockhashes();
+            let num_slot_deltas = self.num_slot_deltas();
+            if let Err(err) = std::thread::Builder::new()
+                .name("solDropStatCch".to_string())
+                .spawn(move || {
+                    let mut drop_time =
+                        solana_measure::measure::Measure::start("drop_purged_status_cache");
+                    drop(self);
+                    drop_time.stop();
+                    datapoint_info!(
+                        "status_cache-drop_purged_entries",
+                        ("elapsed_ms", drop_time.as_ms(), i64),
+                        ("num_blockhashes", num_blockhashes, i64),
+                        ("num_slot_deltas", num_slot_deltas, i64),
+                    );
+                })
+            {
+                // Builder::spawn consumed the closure on failure, which already freed the
+                // entries inline on this thread.
+                warn!("failed to spawn status cache drop thread: {err}");
+            }
+        }
+    }
+}
+
 #[cfg_attr(feature = "frozen-abi", derive(AbiExample))]
 #[derive(Clone, Debug)]
 pub struct StatusCache<T: Serialize + Clone> {
@@ -185,12 +265,16 @@ impl<T: Serialize + Clone> StatusCache<T> {
     /// keys are cleared.
     pub fn add_root(&mut self, fork: Slot) {
         self.roots.insert(fork);
-        self.purge_roots();
+        // Snapshot-rebuild and test path: freeing the purged entries inline is fine here.
+        drop(self.purge_roots());
     }
 
-    pub fn add_roots<I: IntoIterator<Item = Slot>>(&mut self, forks: I) {
+    pub fn add_roots<I: IntoIterator<Item = Slot>>(
+        &mut self,
+        forks: I,
+    ) -> PurgedStatusCacheEntries<T> {
         self.roots.extend(forks);
-        self.purge_roots();
+        self.purge_roots()
     }
 
     pub fn roots(&self) -> &HashSet<Slot> {
@@ -203,7 +287,7 @@ impl<T: Serialize + Clone> StatusCache<T> {
 
     pub fn set_max_root_entries(&mut self, max_root_entries: NonZeroUsize) {
         self.max_root_entries = max_root_entries;
-        self.purge_roots();
+        drop(self.purge_roots());
     }
 
     /// Insert a new key using the given blockhash at the given slot.
@@ -238,21 +322,34 @@ impl<T: Serialize + Clone> StatusCache<T> {
         self.add_to_slot_delta(transaction_blockhash, slot, key_index, key_slice, res);
     }
 
-    pub fn purge_roots(&mut self) {
+    pub fn purge_roots(&mut self) -> PurgedStatusCacheEntries<T> {
         let max_root_entries = self.max_root_entries();
-        if self.roots.len() > max_root_entries {
-            let num_roots_to_purge = self.roots.len() - max_root_entries;
-            let mut roots = self
-                .roots
-                .iter()
-                .copied()
-                .collect::<SmallVec<[Slot; 0x200]>>();
-            let (_, cutoff, _) = roots.select_nth_unstable(num_roots_to_purge - 1);
-            let cutoff = *cutoff;
+        if self.roots.len() <= max_root_entries {
+            return PurgedStatusCacheEntries::default();
+        }
+        let num_roots_to_purge = self.roots.len() - max_root_entries;
+        let mut roots = self
+            .roots
+            .iter()
+            .copied()
+            .collect::<SmallVec<[Slot; 0x200]>>();
+        let (_, cutoff, _) = roots.select_nth_unstable(num_roots_to_purge - 1);
+        let cutoff = *cutoff;
 
-            self.roots.retain(|root| *root > cutoff);
-            self.cache.retain(|_, (fork, _, _)| *fork > cutoff);
-            self.slot_deltas.retain(|slot, _| *slot > cutoff);
+        self.roots.retain(|root| *root > cutoff);
+        // Unlink expired entries and hand ownership to the caller. The roots/cache/slot_deltas
+        // invariant relied on by clear_slot_entries() is still updated atomically while the
+        // caller holds the write lock -- only the deallocation is deferred. extract_if() is
+        // lazy: collect() must fully consume it or unvisited matching entries would survive.
+        PurgedStatusCacheEntries {
+            cache: self
+                .cache
+                .extract_if(|_, (fork, _, _)| *fork <= cutoff)
+                .collect(),
+            slot_deltas: self
+                .slot_deltas
+                .extract_if(|slot, _| *slot <= cutoff)
+                .collect(),
         }
     }
 
@@ -534,6 +631,73 @@ mod tests {
         assert!(status_cache.cache.contains_key(&newest_blockhash));
         assert!(!status_cache.slot_deltas.contains_key(&0));
         assert!(status_cache.slot_deltas.contains_key(&3));
+    }
+
+    #[test]
+    fn test_add_roots_returns_purged_entries() {
+        let sig = Signature::default();
+        let mut status_cache = BankStatusCache::default();
+        let blockhash = hash(Hash::default().as_ref());
+        let ancestors = Ancestors::default();
+        status_cache.insert(&blockhash, sig, 0, ());
+
+        // The default cache starts with root 0; adding max_root_entries more roots purges it.
+        let max_root_entries = status_cache.max_root_entries() as Slot;
+        let purged = status_cache.add_roots(1..=max_root_entries);
+
+        assert!(!purged.is_empty());
+        assert_eq!(purged.num_blockhashes(), 1);
+        assert_eq!(purged.num_slot_deltas(), 1);
+        assert_eq!(status_cache.get_status(sig, &blockhash, &ancestors), None);
+        assert!(!status_cache.cache.contains_key(&blockhash));
+        assert!(!status_cache.slot_deltas.contains_key(&0));
+        assert!(!status_cache.roots().contains(&0));
+    }
+
+    #[test]
+    fn test_add_roots_below_limit_returns_empty() {
+        let sig = Signature::default();
+        let mut status_cache = BankStatusCache::default();
+        let blockhash = hash(Hash::default().as_ref());
+        let ancestors = Ancestors::default();
+        status_cache.insert(&blockhash, sig, 0, ());
+
+        // Roots {0} plus (max_root_entries - 1) more stays within the limit.
+        let max_root_entries = status_cache.max_root_entries() as Slot;
+        let purged = status_cache.add_roots(1..max_root_entries);
+
+        assert!(purged.is_empty());
+        assert_eq!(purged.num_blockhashes(), 0);
+        assert_eq!(purged.num_slot_deltas(), 0);
+        assert_eq!(
+            status_cache.get_status(sig, &blockhash, &ancestors),
+            Some((0, ()))
+        );
+        assert!(status_cache.roots().contains(&0));
+    }
+
+    #[test]
+    fn test_clear_slot_entries_after_purge() {
+        // A blockhash observed both on a purged slot and a surviving slot must stay in the
+        // cache so that clear_slot_entries() on the surviving slot doesn't panic, i.e. the
+        // slot_deltas/cache invariant holds across the purge's extract path.
+        let sig0 = Signature::from([1_u8; 64]);
+        let sig2 = Signature::from([2_u8; 64]);
+        let mut status_cache = BankStatusCache::default();
+        let blockhash = hash(Hash::default().as_ref());
+        status_cache.insert(&blockhash, sig0, 0, ());
+        status_cache.insert(&blockhash, sig2, 2, ());
+
+        let max_root_entries = status_cache.max_root_entries() as Slot;
+        let purged = status_cache.add_roots(1..=max_root_entries);
+
+        assert!(!purged.is_empty());
+        assert!(status_cache.cache.contains_key(&blockhash));
+        assert!(!status_cache.slot_deltas.contains_key(&0));
+        assert!(status_cache.slot_deltas.contains_key(&2));
+
+        status_cache.clear_slot_entries(2);
+        assert!(!status_cache.slot_deltas.contains_key(&2));
     }
 
     #[test]
