@@ -139,3 +139,27 @@ fn bench_status_cache_add_roots(bencher: &mut Bencher) {
         }
     });
 }
+
+#[cfg(not(feature = "shuttle-test"))]
+#[bench]
+fn bench_status_cache_add_roots_deferred_drop(bencher: &mut Bencher) {
+    // Mirrors Bank::squash(): purged entries are unlinked in add_roots() and freed on another
+    // thread, so the timed section measures the lock-held unlink work and excludes the
+    // deallocation cost. Not comparable to bench_status_cache_add_roots, which re-adds the same
+    // root range and so skips purging after the first iteration; this bench advances the slot
+    // range and runs a full purge cycle every iteration. Only the first iteration purges a
+    // populated cache, so the per-iteration mean still understates a single heavy purge.
+    let mut status_cache = BankStatusCache::default();
+    let max_root_entries = status_cache.max_root_entries() as u64;
+    fill_status_cache(&mut status_cache, max_root_entries, 100_000);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let drop_thread = std::thread::spawn(move || receiver.iter().for_each(drop));
+    let mut next_slot = max_root_entries + 1;
+    bencher.iter(|| {
+        let purged = status_cache.add_roots(next_slot..next_slot + max_root_entries);
+        next_slot += max_root_entries;
+        sender.send(purged).unwrap();
+    });
+    drop(sender);
+    drop_thread.join().unwrap();
+}
