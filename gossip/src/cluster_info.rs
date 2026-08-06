@@ -540,6 +540,14 @@ impl ClusterInfo {
         Ok(())
     }
 
+    pub fn set_contact_info_client_id(&self, client_id: u16) {
+        self.my_contact_info
+            .write()
+            .unwrap()
+            .set_version_client(solana_version::ClientId::from(client_id));
+        self.refresh_my_gossip_contact_info();
+    }
+
     pub fn set_tpu_vote(
         &self,
         protocol: contact_info::Protocol,
