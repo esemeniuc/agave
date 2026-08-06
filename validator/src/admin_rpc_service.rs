@@ -294,6 +294,9 @@ pub trait AdminRpc {
         public_tpu_forwards_addr: SocketAddr,
     ) -> Result<()>;
 
+    #[rpc(meta, name = "setContactInfoClientId")]
+    fn set_contact_info_client_id(&self, meta: Self::Metadata, client_id: u16) -> Result<()>;
+
     #[rpc(meta, name = "setPublicTvuAddress")]
     fn set_public_tvu_address(
         &self,
@@ -854,6 +857,16 @@ impl AdminRpc for AdminRpcImpl {
                 my_contact_info.tpu_forwards(Protocol::UDP),
                 my_contact_info.tpu_forwards(Protocol::QUIC),
             );
+            Ok(())
+        })
+    }
+
+    fn set_contact_info_client_id(&self, meta: Self::Metadata, client_id: u16) -> Result<()> {
+        debug!("set_contact_info_client_id rpc request received: {client_id}");
+
+        meta.with_post_init(|post_init| {
+            post_init.cluster_info.set_contact_info_client_id(client_id);
+            warn!("ContactInfo client id set to {client_id}");
             Ok(())
         })
     }
