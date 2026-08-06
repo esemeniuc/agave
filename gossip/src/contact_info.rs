@@ -282,6 +282,10 @@ impl ContactInfo {
         &self.sockets
     }
 
+    pub(crate) fn set_version_client(&mut self, client: solana_version::ClientId) {
+        self.version.set_client(client);
+    }
+
     pub fn hot_swap_pubkey(&mut self, pubkey: Pubkey) {
         self.pubkey = pubkey;
         // Need to update ContactInfo.outset so that this node's contact-info
