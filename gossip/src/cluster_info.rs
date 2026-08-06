@@ -504,10 +504,18 @@ impl ClusterInfo {
     }
 
     pub fn set_tpu_quic(&self, tpu_addr: SocketAddr) -> Result<(), ContactInfoError> {
-        self.my_contact_info
-            .write()
-            .unwrap()
-            .set_tpu(contact_info::Protocol::QUIC, tpu_addr)?;
+        let tpu_udp_addr = SocketAddr::new(
+            tpu_addr.ip(),
+            tpu_addr
+                .port()
+                .checked_sub(6)
+                .ok_or(ContactInfoError::InvalidPort(tpu_addr.port()))?,
+        );
+        {
+            let mut my_contact_info = self.my_contact_info.write().unwrap();
+            my_contact_info.set_tpu(contact_info::Protocol::UDP, tpu_udp_addr)?;
+            my_contact_info.set_tpu(contact_info::Protocol::QUIC, tpu_addr)?;
+        }
         self.refresh_my_gossip_contact_info();
         Ok(())
     }
@@ -516,10 +524,18 @@ impl ClusterInfo {
         &self,
         tpu_forwards_addr: SocketAddr,
     ) -> Result<(), ContactInfoError> {
-        self.my_contact_info
-            .write()
-            .unwrap()
-            .set_tpu_forwards(contact_info::Protocol::QUIC, tpu_forwards_addr)?;
+        let tpu_forwards_udp_addr = SocketAddr::new(
+            tpu_forwards_addr.ip(),
+            tpu_forwards_addr
+                .port()
+                .checked_sub(6)
+                .ok_or(ContactInfoError::InvalidPort(tpu_forwards_addr.port()))?,
+        );
+        {
+            let mut my_contact_info = self.my_contact_info.write().unwrap();
+            my_contact_info.set_tpu_forwards(contact_info::Protocol::UDP, tpu_forwards_udp_addr)?;
+            my_contact_info.set_tpu_forwards(contact_info::Protocol::QUIC, tpu_forwards_addr)?;
+        }
         self.refresh_my_gossip_contact_info();
         Ok(())
     }
