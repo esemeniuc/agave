@@ -10,6 +10,7 @@ pub enum ClientId {
     Firedancer,
     AgaveBam,
     Sig,
+    Bam,
     // If new variants are added, update From<u16> and TryFrom<ClientId>.
     Unknown(u16),
 }
@@ -25,6 +26,7 @@ impl fmt::Display for ClientId {
             Self::Firedancer => write!(f, "Firedancer"),
             Self::AgaveBam => write!(f, "AgaveBam"),
             Self::Sig => write!(f, "Sig"),
+            Self::Bam => write!(f, "Bam"),
             Self::Unknown(id) => write!(f, "Unknown({id})"),
         }
     }
@@ -41,6 +43,7 @@ impl From<u16> for ClientId {
             5u16 => Self::Firedancer,
             6u16 => Self::AgaveBam,
             7u16 => Self::Sig,
+            12u16 => Self::Bam,
             _ => Self::Unknown(client),
         }
     }
@@ -59,13 +62,20 @@ impl TryFrom<ClientId> for u16 {
             ClientId::Firedancer => Ok(5u16),
             ClientId::AgaveBam => Ok(6u16),
             ClientId::Sig => Ok(7u16),
-            ClientId::Unknown(client @ 0u16..=7u16) => Err(format!("Invalid client: {client}")),
+            ClientId::Bam => Ok(12u16),
+            ClientId::Unknown(client) if ClientId::is_known(client) => {
+                Err(format!("Invalid client: {client}"))
+            }
             ClientId::Unknown(client) => Ok(client),
         }
     }
 }
 
 impl ClientId {
+    fn is_known(client: u16) -> bool {
+        !matches!(Self::from(client), Self::Unknown(_))
+    }
+
     pub const fn this_client() -> Self {
         // FIREDANCER: Report client as Firedancer to gossip
         Self::Frankendancer
@@ -78,32 +88,32 @@ mod test {
 
     #[test]
     fn test_client_id() {
-        assert_eq!(ClientId::from(0u16), ClientId::SolanaLabs);
-        assert_eq!(ClientId::from(1u16), ClientId::JitoLabs);
-        assert_eq!(ClientId::from(2u16), ClientId::Frankendancer);
-        assert_eq!(ClientId::from(3u16), ClientId::Agave);
-        assert_eq!(ClientId::from(4u16), ClientId::AgavePaladin);
-        assert_eq!(ClientId::from(5u16), ClientId::Firedancer);
-        assert_eq!(ClientId::from(6u16), ClientId::AgaveBam);
-        assert_eq!(ClientId::from(7u16), ClientId::Sig);
-        for client in 8u16..=u16::MAX {
-            assert_eq!(ClientId::from(client), ClientId::Unknown(client));
-        }
-        assert_eq!(u16::try_from(ClientId::SolanaLabs), Ok(0u16));
-        assert_eq!(u16::try_from(ClientId::JitoLabs), Ok(1u16));
-        assert_eq!(u16::try_from(ClientId::Frankendancer), Ok(2u16));
-        assert_eq!(u16::try_from(ClientId::Agave), Ok(3u16));
-        assert_eq!(u16::try_from(ClientId::AgavePaladin), Ok(4u16));
-        assert_eq!(u16::try_from(ClientId::Firedancer), Ok(5u16));
-        assert_eq!(u16::try_from(ClientId::AgaveBam), Ok(6u16));
-        assert_eq!(u16::try_from(ClientId::Sig), Ok(7u16));
-        for client in 0..=7u16 {
+        let known_clients = [
+            (0u16, ClientId::SolanaLabs),
+            (1u16, ClientId::JitoLabs),
+            (2u16, ClientId::Frankendancer),
+            (3u16, ClientId::Agave),
+            (4u16, ClientId::AgavePaladin),
+            (5u16, ClientId::Firedancer),
+            (6u16, ClientId::AgaveBam),
+            (7u16, ClientId::Sig),
+            (12u16, ClientId::Bam),
+        ];
+
+        for (client, client_id) in known_clients.iter().cloned() {
+            assert_eq!(ClientId::from(client), client_id.clone());
+            assert_eq!(u16::try_from(client_id), Ok(client));
             assert_eq!(
                 u16::try_from(ClientId::Unknown(client)),
                 Err(format!("Invalid client: {client}"))
             );
         }
-        for client in 8u16..=u16::MAX {
+
+        for client in 0u16..=u16::MAX {
+            if ClientId::is_known(client) {
+                continue;
+            }
+            assert_eq!(ClientId::from(client), ClientId::Unknown(client));
             assert_eq!(u16::try_from(ClientId::Unknown(client)), Ok(client));
         }
     }
@@ -118,6 +128,7 @@ mod test {
         assert_eq!(format!("{}", ClientId::Firedancer), "Firedancer");
         assert_eq!(format!("{}", ClientId::AgaveBam), "AgaveBam");
         assert_eq!(format!("{}", ClientId::Sig), "Sig");
+        assert_eq!(format!("{}", ClientId::Bam), "Bam");
         assert_eq!(format!("{}", ClientId::Unknown(0)), "Unknown(0)");
         assert_eq!(format!("{}", ClientId::Unknown(u16::MAX)), "Unknown(65535)");
     }
