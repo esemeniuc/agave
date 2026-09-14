@@ -1,0 +1,23 @@
+digraph G { graph [rankdir=TB, bgcolor="transparent", pad="0.25", nodesep="0.65", ranksep="0.75", fontname="Helvetica", splines=polyline]; node [shape=box, style="rounded,filled", fillcolor="#e8f0fd", color="#6587ad", fontcolor="#142a44", fontname="Helvetica", fontsize=12, margin="0.18,0.13", penwidth=1.2]; edge [fontname="Helvetica", fontsize=10, color="#63788e", fontcolor="#425b71", arrowsize=0.7];
+
+V [label="Own first vote exists\nCount observed initial votes"];
+NG [shape=diamond, label="First vote was not Notar(B)\nAND (\nN(B) >= 40%\nOR [N(B) >= 20% AND N(B)+S >= 60%])", fillcolor="#f0e9ff", color="#805bb3"];
+SG [shape=diamond, label="First vote was Notar(...)\nAND\nS + T - max N(B) >= 40%", fillcolor="#f0e9ff", color="#805bb3"];
+BG [label="Get block B\nUse repair if necessary"];
+WG [shape=diamond, label="Is B the first block\nof the leader window?", fillcolor="#f0e9ff"];
+PG [label="Wait for a parent certificate\nNotar-fallback or stronger"];
+NE [label="Block fallback is safe\nSafeToNotar(s,B)", fillcolor="#ede5ff", color="#805bb3"];
+SE [label="Skip fallback is safe\nSafeToSkip(s)", fillcolor="#ede5ff", color="#805bb3"];
+H [label="Run trySkipWindow\nIf ItsOver is false and the vote is new:\nsend the fallback vote\nand set BadWindow", fillcolor="#fff0d6", color="#b47821"];
+V -> NG [label="F01: Check block fallback", tooltip="The validator needs evidence that another block cannot fast-finalize before it adds fallback support for B.", URL="#why-F01", target="_self"];
+V -> SG [label="F02: Check skip fallback", tooltip="Skip fallback is safe only when no block can get fast finality.", URL="#why-F02", target="_self"];
+NG -> BG [label="F03: Block threshold met", tooltip="A vote that supports B must meet the paper's data requirement. The data also identifies the parent.", URL="#why-F03", target="_self"];
+BG -> WG [label="F04: Block available", tooltip="The first slot and later slots have different parent requirements.", URL="#why-F04", target="_self"];
+WG -> NE [label="F05: First slot", tooltip="The additional parent-certificate check for a later block in the same window does not apply here.", URL="#why-F05", target="_self"];
+WG -> PG [label="F06: Later slot", tooltip="A child must not receive fallback support without the required evidence for its parent.", URL="#why-F06", target="_self"];
+PG -> NE [label="F07: Parent proof available", tooltip="Both the fallback threshold and the parent condition now hold.", URL="#why-F07", target="_self"];
+SG -> SE [label="F08: Skip threshold met", tooltip="The initial votes exclude fast finality for every block in the slot.", URL="#why-F08", target="_self"];
+NE -> H [label="F09: Consider block\nfallback", tooltip="The vote helps form a fallback certificate. The ItsOver check protects an earlier final-vote commitment.", URL="#why-F09", target="_self"];
+SE -> H [label="F10: Consider skip fallback", tooltip="The vote helps form a skip certificate. The ItsOver check protects an earlier final-vote commitment.", URL="#why-F10", target="_self"];
+
+}

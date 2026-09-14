@@ -1,0 +1,22 @@
+digraph G { graph [rankdir=TB, bgcolor="transparent", pad="0.25", nodesep="0.65", ranksep="0.75", fontname="Helvetica", splines=polyline]; node [shape=box, style="rounded,filled", fillcolor="#e8f0fd", color="#6587ad", fontcolor="#142a44", fontname="Helvetica", fontsize=12, margin="0.18,0.13", penwidth=1.2]; edge [fontname="Helvetica", fontsize=10, color="#63788e", fontcolor="#425b71", arrowsize=0.7];
+
+WAIT [label="Consider parent P for window w\nP is before w\nWait for the required evidence"];
+CERT [shape=diamond, label="Does P have a notar certificate\nor a notar-fallback certificate?", fillcolor="#f0e9ff"];
+GAP [shape=diamond, label="Does every slot j between P and w\nhave a skip certificate?\nslot(P) < j < w", fillcolor="#f0e9ff"];
+READY [label="P is a permitted parent\nParentReady(w,P)", fillcolor="#ede5ff", color="#805bb3", penwidth=2];
+RETRY [label="Check pending blocks again\nTheir parent condition can now pass"];
+TIME [label="Start timers once for window w\nLater ready parents do not restart them"];
+EXEC [label="Agave: request replay of parent P\nwhen P is above the local root"];
+LEAD [label="If this validator is the leader:\nselect a ready parent\nand request ProduceWindow"];
+WAIT -> CERT [label="P01: Parent proof arrives", tooltip="A leader needs group support for the parent before normal block production can start.", URL="#why-P01", target="_self"];
+CERT -> GAP [label="P02: Parent proof\nsufficient", tooltip="Support for P alone does not permit the leader to pass unsupported slots.", URL="#why-P02", target="_self"];
+CERT -> WAIT [label="P03: Parent proof absent", tooltip="The validator cannot yet declare P to be a permitted parent.", URL="#why-P03", target="_self"];
+GAP -> WAIT [label="P04: A skip proof is absent", tooltip="The leader needs permission to pass every slot in the gap.", URL="#why-P04", target="_self"];
+WAIT -> GAP [label="P05: A skip proof arrives", tooltip="Certificates can arrive in either order. The new certificate can complete the required evidence.", URL="#why-P05", target="_self"];
+GAP -> READY [label="P06: All required proofs\nexist", tooltip="The leader can now connect a new block to P with the required certificate evidence.", URL="#why-P06", target="_self"];
+READY -> RETRY [label="P07: Retry pending votes", tooltip="A stored block can now meet the parent condition that earlier prevented its initial notar vote.", URL="#why-P07", target="_self"];
+READY -> TIME [label="P08: Start timers once", tooltip="The validator now has a reference time for leader progress. Later certificates must not postpone the deadlines indefinitely.", URL="#why-P08", target="_self"];
+READY -> EXEC [label="P09: Prepare local parent\nstate", tooltip="The validator needs the parent's execution state to process blocks that extend that parent.", URL="#why-P09", target="_self"];
+READY -> LEAD [label="P10: Start scheduled leader\nwork", tooltip="The leader can produce a connected block now that the required evidence exists.", URL="#why-P10", target="_self"];
+
+}

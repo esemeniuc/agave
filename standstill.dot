@@ -1,0 +1,13 @@
+digraph G { graph [rankdir=TB, bgcolor="transparent", pad="0.25", nodesep="0.65", ranksep="0.75", fontname="Helvetica", splines=polyline]; node [shape=box, style="rounded,filled", fillcolor="#e8f0fd", color="#6587ad", fontcolor="#142a44", fontname="Helvetica", fontsize=12, margin="0.18,0.13", penwidth=1.2]; edge [fontname="Helvetica", fontsize=10, color="#63788e", fontcolor="#425b71", arrowsize=0.7];
+
+NORMAL [label="Normal progress\nTrack the highest final slot"];
+STALL [label="No new final slot\nStandstill\nRemember slot f\nSend stored votes and certificates again", fillcolor="#fff0d6", color="#b47821"];
+WINDOW [label="Create a new window timer\nNetwork allowance x 1.05^k\nk = windows since f\nMaximum network allowance: 1 hour"];
+NORMAL -> NORMAL [label="S01: New final slot", tooltip="A new final slot is direct evidence that the network is making progress.", URL="#why-S01", target="_self"];
+NORMAL -> STALL [label="S02: Ten seconds without\nprogress", tooltip="Other validators can lack the evidence needed for the next decision.", URL="#why-S02", target="_self"];
+STALL -> STALL [label="S03: Another ten seconds", tooltip="One retransmission can also be lost or arrive too late. Repetition gives recovery another opportunity.", URL="#why-S03", target="_self"];
+STALL -> WINDOW [label="S04: New window needs a\ntimer", tooltip="More time can prevent repeated skips when the earlier allowance was too short.", URL="#why-S04", target="_self"];
+WINDOW -> STALL [label="S05: Timer created", tooltip="Creating a longer timer does not itself prove that final decisions have resumed.", URL="#why-S05", target="_self"];
+STALL -> NORMAL [color="#18865e", label="S06: A later slot is final", tooltip="The new final slot proves that the network has passed the point where progress stopped.", URL="#why-S06", target="_self"];
+
+}

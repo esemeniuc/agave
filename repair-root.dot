@@ -1,0 +1,28 @@
+digraph G { graph [rankdir=TB, bgcolor="transparent", pad="0.25", nodesep="0.65", ranksep="0.75", fontname="Helvetica", splines=polyline]; node [shape=box, style="rounded,filled", fillcolor="#e8f0fd", color="#6587ad", fontcolor="#142a44", fontname="Helvetica", fontsize=12, margin="0.18,0.13", penwidth=1.2]; edge [fontname="Helvetica", fontsize=10, color="#63788e", fontcolor="#425b71", arrowsize=0.7];
+
+DATA [label="Receive and check block data\nCheck signatures and Merkle proofs\nStore valid new shreds"];
+COMP [label="Complete block B available\nGet missing ancestors"];
+EXEC [label="Agave: execute B and its parents\nBank is frozen; block ID is known"];
+BE [label="Send completed-block event\nBlock(B)\nCheck local vote conditions", fillcolor="#ede5ff", color="#805bb3"];
+PROOF [label="Certificate requires block data\nOR block data is necessary\nfor the fallback parent check"];
+REP [label="Get the missing block by hash\nRepair\nCheck each response; retry if necessary", fillcolor="#fff0d6"];
+FIN [label="Valid finality proof for B\nFast certificate OR Notar + Final", fillcolor="#d9f4e6", color="#18865e"];
+Q [label="Remember final block B\nGet missing data\nCheck local root conditions again"];
+JOIN [shape=diamond, label="B is above the root\nAND the bank is present and frozen\nAND its block ID matches the proof\nAND a local first vote exists?", fillcolor="#f0e9ff"];
+ROOT [label="Advance the local root\nSelect the highest eligible final block\nRemove old state; update commitments", fillcolor="#d9f4e6", color="#18865e", penwidth=2];
+ERR [label="Final block ID matches\nbut the execution hash differs\nStop and save diagnostics", fillcolor="#ffe1e1", color="#b75555"];
+DATA -> COMP [label="R01: All block data present", tooltip="The validator cannot execute or check a complete block from insufficient data.", URL="#why-R01", target="_self"];
+COMP -> EXEC [label="R02: Execute the block", tooltip="The transactions need the parent's state to produce the correct next state.", URL="#why-R02", target="_self"];
+EXEC -> BE [label="R03: Replay complete", tooltip="The current implementation checks execution before its normal initial notar vote.", URL="#why-R03", target="_self"];
+PROOF -> REP [label="R04: Required data missing", tooltip="The certificate does not contain all transactions or the complete parent data.", URL="#why-R04", target="_self"];
+REP -> REP [label="R05: Response absent or\ninvalid", tooltip="A faulty or unavailable peer must not find the repaired block's contents.", URL="#why-R05", target="_self"];
+REP -> COMP [label="R06: Repair complete", tooltip="The validator now has the data identified by the block hash.", URL="#why-R06", target="_self"];
+FIN -> Q [label="R07: Final proof accepted", tooltip="The validator must preserve the final decision even if local execution is not yet complete.", URL="#why-R07", target="_self"];
+Q -> REP [label="R08: Final block data\nmissing", tooltip="The validator needs that data before it can get the final block's local state.", URL="#why-R08", target="_self"];
+Q -> JOIN [label="R09: Check local conditions", tooltip="A valid finality proof alone does not establish that local execution is ready.", URL="#why-R09", target="_self"];
+BE -> JOIN [label="R10: New replay result", tooltip="Replay can supply the last missing local requirement after the certificate arrived.", URL="#why-R10", target="_self"];
+JOIN -> Q [label="R11: A condition is false", tooltip="The validator must not advance its local root to data or state it cannot yet use.", URL="#why-R11", target="_self"];
+JOIN -> ROOT [label="R12: All conditions are\ntrue", tooltip="The validator can now use the final chain as its local execution base.", URL="#why-R12", target="_self"];
+EXEC -> ERR [style=dashed, constraint=false, label="R13: Final execution hash\ndiffers", tooltip="The validator computed a different state for the block that the network finalized. It cannot safely continue from that state.", URL="#why-R13", target="_self"];
+
+}

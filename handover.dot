@@ -1,0 +1,26 @@
+digraph G { graph [rankdir=TB, bgcolor="transparent", pad="0.25", nodesep="0.65", ranksep="0.75", fontname="Helvetica", splines=polyline]; node [shape=box, style="rounded,filled", fillcolor="#e8f0fd", color="#6587ad", fontcolor="#142a44", fontname="Helvetica", fontsize=12, margin="0.18,0.13", penwidth=1.2]; edge [fontname="Helvetica", fontsize=10, color="#63788e", fontcolor="#425b71", arrowsize=0.7];
+
+W [label="Wait to start window w"];
+O [label="Start early on expected parent P\nSend slices of the first block"];
+C [shape=diamond, label="Is ready parent Q\nthe same block as P?", fillcolor="#f0e9ff"];
+H [label="Keep the work on P\nHappy handover", fillcolor="#d9f4e6", color="#18865e"];
+S [label="Change parent once to Q\nDiscard the old execution work\nSad handover", fillcolor="#fff0d6", color="#b47821"];
+B [label="Use the ready parent\nProduce the rest of the first block"];
+NEXT [label="Produce the next block\nUse the preceding block as parent"];
+D [label="Leader window complete"];
+M [label="Stop unnecessary production\nThe window has already passed", fillcolor="#fff0d6"];
+W -> O [label="H01: Start on expected\nparent", tooltip="The leader can save certificate-wait time when P later becomes the ready parent.", URL="#why-H01", target="_self"];
+W -> B [label="H02: Ready parent already\nknown", tooltip="The required parent evidence already exists.", URL="#why-H02", target="_self"];
+O -> O [label="H03: No ready parent yet", tooltip="The work can be kept if the expected parent later becomes ready.", URL="#why-H03", target="_self"];
+O -> C [label="H04: Ready parent arrives", tooltip="A slot number alone does not identify a block. The leader must know whether its execution parent is correct.", URL="#why-H04", target="_self"];
+C -> H [label="H05: Same parent", tooltip="The work already uses a permitted parent.", URL="#why-H05", target="_self"];
+C -> S [label="H06: Different parent", tooltip="The leader must build on a parent that meets ParentReady, even when its earlier expectation was wrong.", URL="#why-H06", target="_self"];
+H -> B [label="H07: Continue on P", tooltip="The leader can now complete normal production without a parent reset.", URL="#why-H07", target="_self"];
+S -> B [label="H08: Continue on Q", tooltip="The final block must describe execution on Q, not on the discarded parent state.", URL="#why-H08", target="_self"];
+B -> NEXT [label="H09: First block complete", tooltip="The next block must continue the same leader-window chain.", URL="#why-H09", target="_self"];
+NEXT -> NEXT [label="H10: More window slots", tooltip="Successive parent links keep the produced blocks connected.", URL="#why-H10", target="_self"];
+NEXT -> D [label="H11: Last block complete", tooltip="The leader schedule assigns the next window separately.", URL="#why-H11", target="_self"];
+W -> M [style=dashed, label="H12: Window already passed", tooltip="New production for a passed window cannot supply the work that the current window needs.", URL="#why-H12", target="_self"];
+O -> M [style=dashed, constraint=false, label="H13: Network moved on", tooltip="The leader must stop spending production time on a window that the network has passed.", URL="#why-H13", target="_self"];
+
+}

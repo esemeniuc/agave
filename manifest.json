@@ -1,0 +1,911 @@
+{
+  "paper": "https://drive.google.com/file/d/1RPJ9OyohFMuFfLmTB5ydPYlrKTIlUxq9/view",
+  "checkout": "a3923f4a76dcd975a6d935d949ef2a4a7373e6a3",
+  "languageStyle": "ASD-STE100",
+  "diagrams": [
+    {
+      "id": "voting",
+      "title": "1 \u00b7 How one validator votes",
+      "scope": "Paper rules and Agave vote checks",
+      "transitions": [
+        {
+          "from": "start",
+          "to": "U",
+          "label": "Start the slot",
+          "when": "The validator starts this slot without a stored first vote.",
+          "action": "Set the initial vote state to empty.",
+          "why": "The validator must select one first vote for this slot.",
+          "id": "V01"
+        },
+        {
+          "from": "U",
+          "to": "P",
+          "label": "Parent condition false",
+          "when": "A complete block arrives, but its parent does not meet the vote condition.",
+          "action": "Keep the block for another check.",
+          "why": "The validator must not support a child before it has the required parent evidence.",
+          "id": "V02"
+        },
+        {
+          "from": "U",
+          "to": "N",
+          "label": "Parent condition true",
+          "when": "A complete valid block arrives. Its parent meets the condition. No first vote exists.",
+          "action": "Send NotarVote for B.",
+          "why": "The block extends a chain that this validator can support under the protocol rules.",
+          "id": "V03"
+        },
+        {
+          "from": "P",
+          "to": "N",
+          "label": "Parent condition true",
+          "when": "ParentReady or a parent vote permits a new check. The stored block now meets the condition.",
+          "action": "Send NotarVote for B. Remove the pending entry.",
+          "why": "The missing parent evidence is now available. The block does not need to arrive again.",
+          "id": "V04"
+        },
+        {
+          "from": "P",
+          "to": "P",
+          "label": "Keep waiting",
+          "when": "A new check still finds insufficient parent evidence.",
+          "action": "Keep the block and wait.",
+          "why": "A new event alone does not make the block safe to support.",
+          "id": "V05"
+        },
+        {
+          "from": "U",
+          "to": "S",
+          "label": "Skip this slot",
+          "when": "A timeout or fallback handler calls trySkipWindow. This slot has no first vote.",
+          "action": "Send SkipVote. Set Voted and BadWindow.",
+          "why": "This vote helps the network continue to another leader window. One validator\u2019s skip vote does not prove that the leader failed.",
+          "id": "V06"
+        },
+        {
+          "from": "P",
+          "to": "S",
+          "label": "Skip the pending slot",
+          "when": "The window skip function reaches this pending slot. The slot has no first vote.",
+          "action": "Send SkipVote. Remove the pending entry.",
+          "why": "The validator must not later send a different first vote when the missing parent evidence arrives.",
+          "id": "V07"
+        },
+        {
+          "from": "N",
+          "to": "F",
+          "label": "Notar certificate for B",
+          "when": "The validator has its own NotarVote for B and an ordinary notar certificate for B. BadWindow and ItsOver are false.",
+          "action": "Send FinalVote for the slot. Set ItsOver.",
+          "why": "The certificate proves 60% initial support. The final vote commits this validator to stop fallback support in this slot.",
+          "id": "V08"
+        },
+        {
+          "from": "N",
+          "to": "R",
+          "label": "Safe fallback condition",
+          "when": "SafeToSkip becomes true, or SafeToNotar becomes true for a block other than the original B.",
+          "action": "Run trySkipWindow. Send the permitted fallback vote. Set BadWindow for the target slot.",
+          "why": "The fallback condition excludes a conflicting fast-final result. The extra vote helps the network get a certificate and continue.",
+          "id": "V09"
+        },
+        {
+          "from": "S",
+          "to": "R",
+          "label": "SafeToNotar for a block",
+          "when": "SafeToNotar becomes true for block C after this validator sent an initial skip vote.",
+          "action": "Run trySkipWindow. Send NotarFallbackVote for C.",
+          "why": "The block now has sufficient evidence for fallback support. The validator can help make it a usable parent.",
+          "id": "V10"
+        },
+        {
+          "from": "R",
+          "to": "R",
+          "label": "Another permitted fallback",
+          "when": "A further fallback condition is true. The validator has not sent that fallback vote. ItsOver is false.",
+          "action": "Send the permitted fallback vote after trySkipWindow.",
+          "why": "Different fallback certificates can help resolve a failed leader window. The first vote remains fixed.",
+          "id": "V11"
+        },
+        {
+          "from": "F",
+          "to": "F",
+          "label": "No new vote in this slot",
+          "when": "A later event would otherwise cause another vote in this slot.",
+          "action": "Do not send a new vote in this slot.",
+          "why": "A final vote must remain a commitment. Reusing its stake for a conflicting fallback would break the finality argument.",
+          "id": "V12"
+        }
+      ]
+    },
+    {
+      "id": "fallback",
+      "title": "2 \u00b7 When a fallback vote is safe",
+      "scope": "Paper rules; Agave repair checks are identified below",
+      "transitions": [
+        {
+          "from": "V",
+          "to": "NG",
+          "label": "Check block fallback",
+          "when": "The validator has a first vote and new initial-vote information.",
+          "action": "Check the SafeToNotar formula for each related block B.",
+          "why": "The validator needs evidence that another block cannot fast-finalize before it adds fallback support for B.",
+          "id": "F01"
+        },
+        {
+          "from": "V",
+          "to": "SG",
+          "label": "Check skip fallback",
+          "when": "The validator has a first vote and new initial-vote information.",
+          "action": "Check the SafeToSkip formula.",
+          "why": "Skip fallback is safe only when no block can get fast finality.",
+          "id": "F02"
+        },
+        {
+          "from": "NG",
+          "to": "BG",
+          "label": "Block threshold met",
+          "when": "The first-vote exclusion and one SafeToNotar threshold alternative are true.",
+          "action": "Get B if its data is missing.",
+          "why": "A vote that supports B must meet the paper\u2019s data requirement. The data also identifies the parent.",
+          "id": "F03"
+        },
+        {
+          "from": "BG",
+          "to": "WG",
+          "label": "Block available",
+          "when": "The validator has block B.",
+          "action": "Find its position in the leader window.",
+          "why": "The first slot and later slots have different parent requirements.",
+          "id": "F04"
+        },
+        {
+          "from": "WG",
+          "to": "NE",
+          "label": "First slot",
+          "when": "B occupies the first slot of the leader window. The earlier checks passed.",
+          "action": "Emit SafeToNotar for B.",
+          "why": "The additional parent-certificate check for a later block in the same window does not apply here.",
+          "id": "F05"
+        },
+        {
+          "from": "WG",
+          "to": "PG",
+          "label": "Later slot",
+          "when": "B occupies a later slot in the leader window.",
+          "action": "Wait for a notar-fallback certificate, or stronger evidence, for its parent.",
+          "why": "A child must not receive fallback support without the required evidence for its parent.",
+          "id": "F06"
+        },
+        {
+          "from": "PG",
+          "to": "NE",
+          "label": "Parent proof available",
+          "when": "The required parent certificate is available.",
+          "action": "Emit SafeToNotar for B.",
+          "why": "Both the fallback threshold and the parent condition now hold.",
+          "id": "F07"
+        },
+        {
+          "from": "SG",
+          "to": "SE",
+          "label": "Skip threshold met",
+          "when": "The first vote was a notar vote. S + T - max N(B) is at least 40%.",
+          "action": "Emit SafeToSkip for the slot.",
+          "why": "The initial votes exclude fast finality for every block in the slot.",
+          "id": "F08"
+        },
+        {
+          "from": "NE",
+          "to": "H",
+          "label": "Consider block fallback",
+          "when": "The handler receives SafeToNotar for B.",
+          "action": "Run trySkipWindow. If ItsOver is false and the vote is new, send NotarFallbackVote for B.",
+          "why": "The vote helps form a fallback certificate. The ItsOver check protects an earlier final-vote commitment.",
+          "id": "F09"
+        },
+        {
+          "from": "SE",
+          "to": "H",
+          "label": "Consider skip fallback",
+          "when": "The handler receives SafeToSkip for the slot.",
+          "action": "Run trySkipWindow. If ItsOver is false and the vote is new, send SkipFallbackVote.",
+          "why": "The vote helps form a skip certificate. The ItsOver check protects an earlier final-vote commitment.",
+          "id": "F10"
+        }
+      ]
+    },
+    {
+      "id": "certificates",
+      "title": "3 \u00b7 What each certificate permits",
+      "scope": "Paper rules and Agave certificate processing",
+      "transitions": [
+        {
+          "from": "NV",
+          "to": "FC",
+          "label": "At least 80%",
+          "when": "Initial notar votes for B reach at least 80% stake.",
+          "action": "Build a fast-final certificate for B.",
+          "why": "This threshold supplies enough correct initial support for the one-round finality proof.",
+          "id": "C01"
+        },
+        {
+          "from": "NV",
+          "to": "NC",
+          "label": "At least 60%",
+          "when": "Initial notar votes for B reach at least 60% stake.",
+          "action": "Build an ordinary notar certificate for B.",
+          "why": "The certificate proves initial support. It permits eligible validators to send final votes.",
+          "id": "C02"
+        },
+        {
+          "from": "NFV",
+          "to": "NFC",
+          "label": "At least 60% distinct",
+          "when": "Initial and fallback votes for B together cover at least 60% distinct stake.",
+          "action": "Build a notar-fallback certificate for B.",
+          "why": "The certificate allows B to serve as a parent when ordinary notar support was insufficient.",
+          "id": "C03"
+        },
+        {
+          "from": "SV",
+          "to": "SC",
+          "label": "At least 60% distinct",
+          "when": "Initial and fallback skip votes together cover at least 60% distinct stake.",
+          "action": "Build a skip certificate.",
+          "why": "The certificate permits a later leader to use a parent before this slot.",
+          "id": "C04"
+        },
+        {
+          "from": "FV",
+          "to": "SFC",
+          "label": "At least 60%",
+          "when": "Final votes for the slot reach at least 60% stake.",
+          "action": "Build a final certificate for the slot.",
+          "why": "The certificate proves enough final-vote commitments for the two-round path.",
+          "id": "C05"
+        },
+        {
+          "from": "FC",
+          "to": "FIN",
+          "label": "Accept fast finality",
+          "when": "The validator accepts a valid fast-final certificate for B.",
+          "action": "Mark B as final.",
+          "why": "The 80% certificate alone meets the one-round finality rule.",
+          "id": "C06"
+        },
+        {
+          "from": "NC",
+          "to": "BN",
+          "label": "Try own final vote",
+          "when": "The validator accepts an ordinary notar certificate for B.",
+          "action": "Record BlockNotarized. Check the local final-vote conditions.",
+          "why": "The certificate supplies the group evidence that a correct final voter needs.",
+          "id": "C07"
+        },
+        {
+          "from": "NC",
+          "to": "PAIR",
+          "label": "Store notar proof",
+          "when": "The validator accepts the notar certificate for B.",
+          "action": "Use it with the final certificate, if that certificate is available.",
+          "why": "The notar certificate identifies the block that the slot-only final certificate refers to.",
+          "id": "C08"
+        },
+        {
+          "from": "SFC",
+          "to": "PAIR",
+          "label": "Store final proof",
+          "when": "The validator accepts the final certificate for the slot.",
+          "action": "Use it with the ordinary notar certificate, if that certificate is available.",
+          "why": "The final certificate proves commitments but does not contain the block identity by itself.",
+          "id": "C09"
+        },
+        {
+          "from": "PAIR",
+          "to": "FIN",
+          "label": "Accept two-round finality",
+          "when": "Both valid certificates refer to the same slot. The notar certificate identifies B.",
+          "action": "Mark B as final.",
+          "why": "The pair supplies both block support and final-vote commitments.",
+          "id": "C10"
+        },
+        {
+          "from": "FIN",
+          "to": "CHAIN",
+          "label": "Decide the earlier chain",
+          "when": "Block B becomes final.",
+          "action": "Finalize its ancestors. Decide omitted earlier slots as skips.",
+          "why": "B identifies one parent chain. A final decision for B fixes that earlier chain.",
+          "id": "C11"
+        },
+        {
+          "from": "NC",
+          "to": "NFC",
+          "label": "Also meets fallback proof",
+          "when": "An ordinary notar certificate already proves at least 60% support for B.",
+          "action": "Treat that proof as sufficient for uses that need a notar-fallback certificate.",
+          "why": "Initial notar votes are permitted inputs to a notar-fallback certificate.",
+          "id": "C12"
+        },
+        {
+          "from": "FC",
+          "to": "NC",
+          "label": "Also meets notar proof",
+          "when": "A fast-final certificate proves at least 80% initial notar stake.",
+          "action": "Treat that evidence as meeting the weaker 60% notar requirement.",
+          "why": "A group of at least 80% also meets a threshold of 60%.",
+          "id": "C13"
+        },
+        {
+          "from": "NFC",
+          "to": "PR",
+          "label": "Parent has enough support",
+          "when": "The validator has a notar-fallback certificate, or stronger evidence, for B.",
+          "action": "Check whether intervening slots have the required skip certificates.",
+          "why": "A supported block can serve as a parent only when the next window can connect to it.",
+          "id": "C14"
+        },
+        {
+          "from": "SC",
+          "to": "PR",
+          "label": "One more gap has proof",
+          "when": "A new skip certificate arrives.",
+          "action": "Check whether it completes the required sequence of skip certificates.",
+          "why": "The next leader needs permission to pass every slot between its parent and its window.",
+          "id": "C15"
+        }
+      ]
+    },
+    {
+      "id": "parent-ready",
+      "title": "4 \u00b7 Why ParentReady permits a new window",
+      "scope": "Paper rules and Agave event handlers",
+      "transitions": [
+        {
+          "from": "WAIT",
+          "to": "CERT",
+          "label": "Parent proof arrives",
+          "when": "New certificate evidence for P arrives.",
+          "action": "Check whether the certificate is sufficient for a parent.",
+          "why": "A leader needs group support for the parent before normal block production can start.",
+          "id": "P01"
+        },
+        {
+          "from": "CERT",
+          "to": "GAP",
+          "label": "Parent proof sufficient",
+          "when": "P has a notar or notar-fallback certificate, or a stronger proof.",
+          "action": "Check each intervening slot.",
+          "why": "Support for P alone does not permit the leader to pass unsupported slots.",
+          "id": "P02"
+        },
+        {
+          "from": "CERT",
+          "to": "WAIT",
+          "label": "Parent proof absent",
+          "when": "The validator lacks sufficient certificate evidence for P.",
+          "action": "Keep the current evidence and wait.",
+          "why": "The validator cannot yet declare P to be a permitted parent.",
+          "id": "P03"
+        },
+        {
+          "from": "GAP",
+          "to": "WAIT",
+          "label": "A skip proof is absent",
+          "when": "At least one intervening slot lacks a skip certificate.",
+          "action": "Wait for the missing certificate.",
+          "why": "The leader needs permission to pass every slot in the gap.",
+          "id": "P04"
+        },
+        {
+          "from": "WAIT",
+          "to": "GAP",
+          "label": "A skip proof arrives",
+          "when": "A new skip certificate arrives. The parent already has sufficient evidence.",
+          "action": "Check the gap again.",
+          "why": "Certificates can arrive in either order. The new certificate can complete the required evidence.",
+          "id": "P05"
+        },
+        {
+          "from": "GAP",
+          "to": "READY",
+          "label": "All required proofs exist",
+          "when": "Every intervening slot has a skip certificate. This condition also holds when there are no intervening slots.",
+          "action": "Record ParentReady(w,P).",
+          "why": "The leader can now connect a new block to P with the required certificate evidence.",
+          "id": "P06"
+        },
+        {
+          "from": "READY",
+          "to": "RETRY",
+          "label": "Retry pending votes",
+          "when": "The validator records a new ready parent.",
+          "action": "Check stored blocks again in slot order.",
+          "why": "A stored block can now meet the parent condition that earlier prevented its initial notar vote.",
+          "id": "P07"
+        },
+        {
+          "from": "READY",
+          "to": "TIME",
+          "label": "Start timers once",
+          "when": "This is the first ParentReady event for window w.",
+          "action": "Start the window timers. Keep existing timers when more parents become ready.",
+          "why": "The validator now has a reference time for leader progress. Later certificates must not postpone the deadlines indefinitely.",
+          "id": "P08"
+        },
+        {
+          "from": "READY",
+          "to": "EXEC",
+          "label": "Prepare local parent state",
+          "when": "Agave receives a ready parent above the local root.",
+          "action": "Request the required replay-bank switch.",
+          "why": "The validator needs the parent\u2019s execution state to process blocks that extend that parent.",
+          "id": "P09"
+        },
+        {
+          "from": "READY",
+          "to": "LEAD",
+          "label": "Start scheduled leader work",
+          "when": "This validator leads the ready window, and Agave has not already passed that window.",
+          "action": "Select a permitted parent. Send ProduceWindow to block creation.",
+          "why": "The leader can produce a connected block now that the required evidence exists.",
+          "id": "P10"
+        }
+      ]
+    },
+    {
+      "id": "timers",
+      "title": "5 \u00b7 Why timers cause skip votes",
+      "scope": "Paper deadlines and Agave crashed-leader check",
+      "transitions": [
+        {
+          "from": "IDLE",
+          "to": "FIRST",
+          "label": "First ParentReady",
+          "when": "The validator gets the first ParentReady event for this window.",
+          "action": "Set the first-data and block deadlines.",
+          "why": "The event establishes when the validator can start to expect progress from this leader window.",
+          "id": "T01"
+        },
+        {
+          "from": "FIRST",
+          "to": "BLOCK",
+          "label": "First-data deadline",
+          "when": "The first-data deadline expires.",
+          "action": "Advance the timer machine to the first block deadline.",
+          "why": "The validator must next find whether a complete block arrived in time.",
+          "id": "T02"
+        },
+        {
+          "from": "FIRST",
+          "to": "CE",
+          "label": "Emit first-data event",
+          "when": "The timer leaves the first-data wait state.",
+          "action": "Emit TimeoutCrashedLeader for the first slot.",
+          "why": "This event lets the vote handler check whether the leader has supplied any shred.",
+          "id": "T03"
+        },
+        {
+          "from": "BLOCK",
+          "to": "TE",
+          "label": "Emit block event",
+          "when": "The deadline for block i expires.",
+          "action": "Emit Timeout(i).",
+          "why": "The vote handler must decide whether to stop its initial-vote wait for this slot.",
+          "id": "T04"
+        },
+        {
+          "from": "BLOCK",
+          "to": "BLOCK",
+          "label": "More slots remain",
+          "when": "A block deadline expires and another slot remains in the window.",
+          "action": "Advance i by one. Add one block interval to the deadline.",
+          "why": "Each successive block needs its own production interval.",
+          "id": "T05"
+        },
+        {
+          "from": "BLOCK",
+          "to": "DONE",
+          "label": "Last deadline",
+          "when": "The last block deadline in the window expires.",
+          "action": "Finish this window\u2019s timer machine.",
+          "why": "There are no further slots to check in this window.",
+          "id": "T06"
+        },
+        {
+          "from": "CE",
+          "to": "CG",
+          "label": "Check first data",
+          "when": "The vote handler receives TimeoutCrashedLeader.",
+          "action": "Check for an existing first vote and a first shred.",
+          "why": "The handler must not treat a leader as silent when it already has data or a vote for the slot.",
+          "id": "T07"
+        },
+        {
+          "from": "TE",
+          "to": "TG",
+          "label": "Check first vote",
+          "when": "The vote handler receives Timeout(i).",
+          "action": "Check whether the validator has a first vote for i.",
+          "why": "The deadline can cause an initial skip only if the initial decision is still open.",
+          "id": "T08"
+        },
+        {
+          "from": "CG",
+          "to": "SK",
+          "label": "No vote and no shred",
+          "when": "The first-data deadline passed. No first vote or first shred exists for the first slot.",
+          "action": "Run trySkipWindow.",
+          "why": "The validator has no data evidence of progress and can help the network proceed to another window.",
+          "id": "T09"
+        },
+        {
+          "from": "TG",
+          "to": "SK",
+          "label": "No first vote",
+          "when": "The block deadline passed. The slot has no first vote.",
+          "action": "Run trySkipWindow.",
+          "why": "The validator did not get a block it could support before its deadline.",
+          "id": "T10"
+        },
+        {
+          "from": "CG",
+          "to": "IGNORE",
+          "label": "Vote or shred exists",
+          "when": "The validator already has a first vote or a first shred for the slot.",
+          "action": "Send no skip vote from this event.",
+          "why": "An existing vote must remain fixed. A first shred makes the silence check insufficient, so the block deadline controls the later decision.",
+          "id": "T11"
+        },
+        {
+          "from": "TG",
+          "to": "IGNORE",
+          "label": "First vote exists",
+          "when": "The validator already sent a first vote for this slot.",
+          "action": "Keep that first vote.",
+          "why": "A timeout cannot authorize a second initial vote.",
+          "id": "T12"
+        }
+      ]
+    },
+    {
+      "id": "handover",
+      "title": "6 \u00b7 Why the leader keeps or changes its parent",
+      "scope": "Paper Algorithm 3 and the Agave feature gate",
+      "transitions": [
+        {
+          "from": "W",
+          "to": "O",
+          "label": "Start on expected parent",
+          "when": "The preceding window\u2019s last block is available. The feature and migration gates permit the early-start path.",
+          "action": "Start the first block on expected parent P.",
+          "why": "The leader can save certificate-wait time when P later becomes the ready parent.",
+          "id": "H01"
+        },
+        {
+          "from": "W",
+          "to": "B",
+          "label": "Ready parent already known",
+          "when": "ParentReady is available before the leader starts early work.",
+          "action": "Build directly on the ready parent.",
+          "why": "The required parent evidence already exists.",
+          "id": "H02"
+        },
+        {
+          "from": "O",
+          "to": "O",
+          "label": "No ready parent yet",
+          "when": "The leader still has no ParentReady notification.",
+          "action": "Continue early slice production.",
+          "why": "The work can be kept if the expected parent later becomes ready.",
+          "id": "H03"
+        },
+        {
+          "from": "O",
+          "to": "C",
+          "label": "Ready parent arrives",
+          "when": "The leader receives the selected ready parent Q.",
+          "action": "Compare the full identity of Q with P.",
+          "why": "A slot number alone does not identify a block. The leader must know whether its execution parent is correct.",
+          "id": "H04"
+        },
+        {
+          "from": "C",
+          "to": "H",
+          "label": "Same parent",
+          "when": "Q and P identify the same block.",
+          "action": "Keep the existing first-block work.",
+          "why": "The work already uses a permitted parent.",
+          "id": "H05"
+        },
+        {
+          "from": "C",
+          "to": "S",
+          "label": "Different parent",
+          "when": "Q and P identify different blocks.",
+          "action": "Change the parent to Q and reset the first-block execution work.",
+          "why": "The leader must build on a parent that meets ParentReady, even when its earlier expectation was wrong.",
+          "id": "H06"
+        },
+        {
+          "from": "H",
+          "to": "B",
+          "label": "Continue on P",
+          "when": "The existing parent has the required ready-parent evidence.",
+          "action": "Produce the rest of the first block.",
+          "why": "The leader can now complete normal production without a parent reset.",
+          "id": "H07"
+        },
+        {
+          "from": "S",
+          "to": "B",
+          "label": "Continue on Q",
+          "when": "The leader has changed to the permitted parent Q.",
+          "action": "Produce the first block from the new parent state.",
+          "why": "The final block must describe execution on Q, not on the discarded parent state.",
+          "id": "H08"
+        },
+        {
+          "from": "B",
+          "to": "NEXT",
+          "label": "First block complete",
+          "when": "The first block is complete and another slot remains.",
+          "action": "Use that block as the next block\u2019s parent.",
+          "why": "The next block must continue the same leader-window chain.",
+          "id": "H09"
+        },
+        {
+          "from": "NEXT",
+          "to": "NEXT",
+          "label": "More window slots",
+          "when": "The current block is complete and another slot remains in the window.",
+          "action": "Produce the next block on the current block.",
+          "why": "Successive parent links keep the produced blocks connected.",
+          "id": "H10"
+        },
+        {
+          "from": "NEXT",
+          "to": "D",
+          "label": "Last block complete",
+          "when": "The leader completes the last block in its window.",
+          "action": "End production for this window.",
+          "why": "The leader schedule assigns the next window separately.",
+          "id": "H11"
+        },
+        {
+          "from": "W",
+          "to": "M",
+          "label": "Window already passed",
+          "when": "Agave finds that the requested production window is already unnecessary.",
+          "action": "Do not start that window.",
+          "why": "New production for a passed window cannot supply the work that the current window needs.",
+          "id": "H12"
+        },
+        {
+          "from": "O",
+          "to": "M",
+          "label": "Network moved on",
+          "when": "Agave receives WindowMovedOn during early production.",
+          "action": "Stop the unnecessary work.",
+          "why": "The leader must stop spending production time on a window that the network has passed.",
+          "id": "H13"
+        }
+      ]
+    },
+    {
+      "id": "repair-root",
+      "title": "7 \u00b7 Why a final block can still need repair",
+      "scope": "Paper data rules and Agave local execution checks",
+      "transitions": [
+        {
+          "from": "DATA",
+          "to": "COMP",
+          "label": "All block data present",
+          "when": "The validator has enough valid data to reconstruct the complete block.",
+          "action": "Make B available for execution.",
+          "why": "The validator cannot execute or check a complete block from insufficient data.",
+          "id": "R01"
+        },
+        {
+          "from": "COMP",
+          "to": "EXEC",
+          "label": "Execute the block",
+          "when": "B and the required parent data are available.",
+          "action": "Execute the parent chain and B.",
+          "why": "The transactions need the parent\u2019s state to produce the correct next state.",
+          "id": "R02"
+        },
+        {
+          "from": "EXEC",
+          "to": "BE",
+          "label": "Replay complete",
+          "when": "Agave completes replay and has the block ID.",
+          "action": "Send Block(B) to the voting loop.",
+          "why": "The current implementation checks execution before its normal initial notar vote.",
+          "id": "R03"
+        },
+        {
+          "from": "PROOF",
+          "to": "REP",
+          "label": "Required data missing",
+          "when": "A certificate or the fallback parent check requires block data that the validator lacks.",
+          "action": "Request that specific block.",
+          "why": "The certificate does not contain all transactions or the complete parent data.",
+          "id": "R04"
+        },
+        {
+          "from": "REP",
+          "to": "REP",
+          "label": "Response absent or invalid",
+          "when": "A repair request does not supply valid missing data.",
+          "action": "Try another request to a sampled peer.",
+          "why": "A faulty or unavailable peer must not find the repaired block\u2019s contents.",
+          "id": "R05"
+        },
+        {
+          "from": "REP",
+          "to": "COMP",
+          "label": "Repair complete",
+          "when": "Verified responses supply the required block data.",
+          "action": "Make the block available for execution.",
+          "why": "The validator now has the data identified by the block hash.",
+          "id": "R06"
+        },
+        {
+          "from": "FIN",
+          "to": "Q",
+          "label": "Final proof accepted",
+          "when": "The validator verifies a fast-final certificate or the required pair of certificates.",
+          "action": "Remember B as final. Request repair and check the local root conditions.",
+          "why": "The validator must preserve the final decision even if local execution is not yet complete.",
+          "id": "R07"
+        },
+        {
+          "from": "Q",
+          "to": "REP",
+          "label": "Final block data missing",
+          "when": "The final block or its required ancestors are missing.",
+          "action": "Request the missing data.",
+          "why": "The validator needs that data before it can get the final block\u2019s local state.",
+          "id": "R08"
+        },
+        {
+          "from": "Q",
+          "to": "JOIN",
+          "label": "Check local conditions",
+          "when": "The validator has a stored final decision for B.",
+          "action": "Check the bank, block ID, vote history, and current root.",
+          "why": "A valid finality proof alone does not establish that local execution is ready.",
+          "id": "R09"
+        },
+        {
+          "from": "BE",
+          "to": "JOIN",
+          "label": "New replay result",
+          "when": "A completed-block event arrives while final decisions are stored.",
+          "action": "Check whether any final block can now become the local root.",
+          "why": "Replay can supply the last missing local requirement after the certificate arrived.",
+          "id": "R10"
+        },
+        {
+          "from": "JOIN",
+          "to": "Q",
+          "label": "A condition is false",
+          "when": "At least one local root condition is false.",
+          "action": "Keep the final decision and wait for the missing requirement.",
+          "why": "The validator must not advance its local root to data or state it cannot yet use.",
+          "id": "R11"
+        },
+        {
+          "from": "JOIN",
+          "to": "ROOT",
+          "label": "All conditions are true",
+          "when": "A final block above the root meets every local requirement.",
+          "action": "Select the highest eligible final block. Advance the root and remove unnecessary state.",
+          "why": "The validator can now use the final chain as its local execution base.",
+          "id": "R12"
+        },
+        {
+          "from": "EXEC",
+          "to": "ERR",
+          "label": "Final execution hash differs",
+          "when": "The bank is frozen and its block ID matches a final block, but its expected execution hash differs.",
+          "action": "Stop the validator and save diagnostics.",
+          "why": "The validator computed a different state for the block that the network finalized. It cannot safely continue from that state.",
+          "id": "R13"
+        }
+      ]
+    },
+    {
+      "id": "standstill",
+      "title": "8 \u00b7 Why standstill recovery repeats messages",
+      "scope": "Agave implementation",
+      "transitions": [
+        {
+          "from": "NORMAL",
+          "to": "NORMAL",
+          "label": "New final slot",
+          "when": "Agave observes a new highest final slot.",
+          "action": "Reset the ten-second standstill timer.",
+          "why": "A new final slot is direct evidence that the network is making progress.",
+          "id": "S01"
+        },
+        {
+          "from": "NORMAL",
+          "to": "STALL",
+          "label": "Ten seconds without progress",
+          "when": "No new final slot appears for ten seconds.",
+          "action": "Record slot f. Send stored votes above f and related certificates again.",
+          "why": "Other validators can lack the evidence needed for the next decision.",
+          "id": "S02"
+        },
+        {
+          "from": "STALL",
+          "to": "STALL",
+          "label": "Another ten seconds",
+          "when": "The network still has no new final slot after the next interval.",
+          "action": "Send the required votes and certificates again.",
+          "why": "One retransmission can also be lost or arrive too late. Repetition gives recovery another opportunity.",
+          "id": "S03"
+        },
+        {
+          "from": "STALL",
+          "to": "WINDOW",
+          "label": "New window needs a timer",
+          "when": "Agave creates a timer while standstill is active.",
+          "action": "Increase the network allowance according to the number of windows since f.",
+          "why": "More time can prevent repeated skips when the earlier allowance was too short.",
+          "id": "S04"
+        },
+        {
+          "from": "WINDOW",
+          "to": "STALL",
+          "label": "Timer created",
+          "when": "The new timer has its adjusted network allowance.",
+          "action": "Continue standstill monitoring. Keep the normal block and first-data intervals.",
+          "why": "Creating a longer timer does not itself prove that final decisions have resumed.",
+          "id": "S05"
+        },
+        {
+          "from": "STALL",
+          "to": "NORMAL",
+          "label": "A later slot is final",
+          "when": "Agave observes a final slot above f.",
+          "action": "Clear standstill and return to normal progress tracking.",
+          "why": "The new final slot proves that the network has passed the point where progress stopped.",
+          "id": "S06"
+        }
+      ]
+    }
+  ],
+  "events": [
+    "Block",
+    "BlockNotarized",
+    "BlockNotarFallback",
+    "FirstShred",
+    "ParentReady",
+    "TimeoutCrashedLeader",
+    "Timeout",
+    "SafeToNotar",
+    "SafeToSkip",
+    "ProduceWindow",
+    "Finalized",
+    "Standstill",
+    "SetIdentity"
+  ],
+  "sequenceDiagram": {
+    "file": "fast-leader-sequence.svg",
+    "messages": 17,
+    "participants": 4
+  },
+  "tooltipCounts": {
+    "State": 71,
+    "Transition": 91,
+    "Term": 58,
+    "Participant": 4,
+    "Network message": 9,
+    "Local action": 7,
+    "Internal event": 1
+  }
+}

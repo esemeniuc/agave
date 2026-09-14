@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant A as Leader A
+    box rgb(237, 246, 252) Inside Leader B
+        participant B as Replay and block producer
+        participant P as Vote and certificate Pool
+    end
+    participant V as Other validators
+
+    A->>B: Block 103 data
+    A->>V: Block 103 data
+    B->>B: Execute 103; use it as expected parent
+    B->>V: BlockHeader for 104, parent 103
+    B->>V: Early transaction data for 104
+
+    Note over P,V: Parent votes and early block production overlap
+    V->>P: Parent votes or valid certificates
+    P->>P: Check parent and intervening skip certificates
+    P-->>B: Local ready-parent notification
+
+    alt Ready parent is block 103
+        B->>B: Keep the early work
+    else Ready parent is a different block Q
+        B->>B: Stop old record input
+        B->>V: UpdateParent naming Q
+        B->>B: Rebuild execution on Q
+        V->>V: Discard old execution effects; use Q
+    end
+
+    B->>V: Remaining block 104 data and footer
+    V->>V: Complete execution; check own voting conditions
+    V->>P: Ordinary notar votes for completed block 104
+    B->>V: Produce subsequent blocks 105 to 107

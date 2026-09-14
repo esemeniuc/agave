@@ -1,0 +1,33 @@
+digraph G { graph [rankdir=TB, bgcolor="transparent", pad="0.25", nodesep="0.65", ranksep="0.75", fontname="Helvetica", splines=polyline]; node [shape=box, style="rounded,filled", fillcolor="#e8f0fd", color="#6587ad", fontcolor="#142a44", fontname="Helvetica", fontsize=12, margin="0.18,0.13", penwidth=1.2]; edge [fontname="Helvetica", fontsize=10, color="#63788e", fontcolor="#425b71", arrowsize=0.7];
+
+NV [label="Initial votes for B\nNotarVote"];
+NFV [label="Initial or fallback votes for B\nNotarVote / NotarFallbackVote"];
+SV [label="Initial or fallback skip votes\nSkipVote / SkipFallbackVote"];
+FV [label="Final votes for the slot\nFinalVote"];
+FC [label="Fast-final certificate for B\nAt least 80% initial notar stake", fillcolor="#d9f4e6", color="#18865e"];
+NC [label="Notar certificate for B\nAt least 60% initial notar stake", fillcolor="#dcf3f3", color="#278d91"];
+NFC [label="Notar-fallback certificate for B\nAt least 60% distinct stake", fillcolor="#dcf3f3", color="#278d91"];
+SC [label="Skip certificate for the slot\nAt least 60% distinct stake", fillcolor="#fff0d6", color="#b47821"];
+SFC [label="Final certificate for the slot\nAt least 60% final-vote stake", fillcolor="#dcf3f3", color="#278d91"];
+BN [label="Check own final-vote conditions\nBlockNotarized(s,B)", fillcolor="#ede5ff", color="#805bb3"];
+PAIR [label="Both certificates available\nNotar(B) AND Final(slot)", fillcolor="#dcf3f3", color="#278d91"];
+FIN [label="Block B is final\nOne-round or two-round result", fillcolor="#d9f4e6", color="#18865e", penwidth=2];
+CHAIN [label="Ancestors are final\nGaps in that chain are decided skips", fillcolor="#d9f4e6", color="#18865e"];
+PR [label="Check usable parents\nParentReady conditions", fillcolor="#ede5ff", color="#805bb3"];
+NV -> FC [label="C01: At least 80%", tooltip="This threshold supplies enough correct initial support for the one-round finality proof.", URL="#why-C01", target="_self"];
+NV -> NC [label="C02: At least 60%", tooltip="The certificate proves initial support. It permits eligible validators to send final votes.", URL="#why-C02", target="_self"];
+NFV -> NFC [label="C03: At least 60% distinct", tooltip="The certificate allows B to serve as a parent when ordinary notar support was insufficient.", URL="#why-C03", target="_self"];
+SV -> SC [label="C04: At least 60% distinct", tooltip="The certificate permits a later leader to use a parent before this slot.", URL="#why-C04", target="_self"];
+FV -> SFC [label="C05: At least 60%", tooltip="The certificate proves enough final-vote commitments for the two-round path.", URL="#why-C05", target="_self"];
+FC -> FIN [color="#18865e", label="C06: Accept fast finality", tooltip="The 80% certificate alone meets the one-round finality rule.", URL="#why-C06", target="_self"];
+NC -> BN [label="C07: Try own final vote", tooltip="The certificate supplies the group evidence that a correct final voter needs.", URL="#why-C07", target="_self"];
+NC -> PAIR [label="C08: Store notar proof", tooltip="The notar certificate identifies the block that the slot-only final certificate refers to.", URL="#why-C08", target="_self"];
+SFC -> PAIR [label="C09: Store final proof", tooltip="The final certificate proves commitments but does not contain the block identity by itself.", URL="#why-C09", target="_self"];
+PAIR -> FIN [color="#18865e", label="C10: Accept two-round\nfinality", tooltip="The pair supplies both block support and final-vote commitments.", URL="#why-C10", target="_self"];
+FIN -> CHAIN [label="C11: Decide the earlier\nchain", tooltip="B identifies one parent chain. A final decision for B fixes that earlier chain.", URL="#why-C11", target="_self"];
+NC -> NFC [style=dashed, color="#8a99a9", label="C12: Also meets fallback\nproof", tooltip="Initial notar votes are permitted inputs to a notar-fallback certificate.", URL="#why-C12", target="_self"];
+FC -> NC [style=dashed, color="#8a99a9", label="C13: Also meets notar proof", tooltip="A group of at least 80% also meets a threshold of 60%.", URL="#why-C13", target="_self"];
+NFC -> PR [label="C14: Parent has enough\nsupport", tooltip="A supported block can serve as a parent only when the next window can connect to it.", URL="#why-C14", target="_self"];
+SC -> PR [label="C15: One more gap has proof", tooltip="The next leader needs permission to pass every slot between its parent and its window.", URL="#why-C15", target="_self"];
+
+}

@@ -1,0 +1,26 @@
+digraph G { graph [rankdir=TB, bgcolor="transparent", pad="0.25", nodesep="0.65", ranksep="0.75", fontname="Helvetica", splines=polyline]; node [shape=box, style="rounded,filled", fillcolor="#e8f0fd", color="#6587ad", fontcolor="#142a44", fontname="Helvetica", fontsize=12, margin="0.18,0.13", penwidth=1.2]; edge [fontname="Helvetica", fontsize=10, color="#63788e", fontcolor="#425b71", arrowsize=0.7];
+
+IDLE [label="No timer for window w"];
+FIRST [label="Wait for the first data set\nDeadline: t0 + networkDelay +\nfirstDataTime"];
+BLOCK [label="Wait for block i\nFirst i = w\nDeadline: t0 + networkDelay\n+ (i-w+1) x blockTime"];
+DONE [label="All window deadlines have passed"];
+CE [label="First-data deadline event\nTimeoutCrashedLeader(w)", fillcolor="#ede5ff", color="#805bb3"];
+TE [label="Block deadline event\nTimeout(i)", fillcolor="#ede5ff", color="#805bb3"];
+CG [shape=diamond, label="No first vote for w\nAND no first shred for w?", fillcolor="#fff0d6"];
+TG [shape=diamond, label="No first vote for i?", fillcolor="#fff0d6"];
+SK [label="Send initial skip votes\nfor every slot in this window\nthat has no first vote\ntrySkipWindow", fillcolor="#fff0d6", color="#b47821"];
+IGNORE [label="Keep existing vote state\nSend no skip vote from this event"];
+IDLE -> FIRST [label="T01: First ParentReady", tooltip="The event establishes when the validator can start to expect progress from this leader window.", URL="#why-T01", target="_self"];
+FIRST -> BLOCK [label="T02: First-data deadline", tooltip="The validator must next find whether a complete block arrived in time.", URL="#why-T02", target="_self"];
+FIRST -> CE [style=dashed, label="T03: Emit first-data event", tooltip="This event lets the vote handler check whether the leader has supplied any shred.", URL="#why-T03", target="_self"];
+BLOCK -> TE [style=dashed, label="T04: Emit block event", tooltip="The vote handler must decide whether to stop its initial-vote wait for this slot.", URL="#why-T04", target="_self"];
+BLOCK -> BLOCK [label="T05: More slots remain", tooltip="Each successive block needs its own production interval.", URL="#why-T05", target="_self"];
+BLOCK -> DONE [label="T06: Last deadline", tooltip="There are no further slots to check in this window.", URL="#why-T06", target="_self"];
+CE -> CG [label="T07: Check first data", tooltip="The handler must not treat a leader as silent when it already has data or a vote for the slot.", URL="#why-T07", target="_self"];
+TE -> TG [label="T08: Check first vote", tooltip="The deadline can cause an initial skip only if the initial decision is still open.", URL="#why-T08", target="_self"];
+CG -> SK [label="T09: No vote and no shred", tooltip="The validator has no data evidence of progress and can help the network proceed to another window.", URL="#why-T09", target="_self"];
+TG -> SK [label="T10: No first vote", tooltip="The validator did not get a block it could support before its deadline.", URL="#why-T10", target="_self"];
+CG -> IGNORE [label="T11: Vote or shred exists", tooltip="An existing vote must remain fixed. A first shred makes the silence check insufficient, so the block deadline controls the later decision.", URL="#why-T11", target="_self"];
+TG -> IGNORE [label="T12: First vote exists", tooltip="A timeout cannot authorize a second initial vote.", URL="#why-T12", target="_self"];
+
+}

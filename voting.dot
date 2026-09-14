@@ -1,0 +1,23 @@
+digraph G { graph [rankdir=TB, bgcolor="transparent", pad="0.25", nodesep="0.65", ranksep="0.75", fontname="Helvetica", splines=polyline]; node [shape=box, style="rounded,filled", fillcolor="#e8f0fd", color="#6587ad", fontcolor="#142a44", fontname="Helvetica", fontsize=12, margin="0.18,0.13", penwidth=1.2]; edge [fontname="Helvetica", fontsize=10, color="#63788e", fontcolor="#425b71", arrowsize=0.7];
+
+U [label="No first vote\nVoted = false"];
+P [label="Block available\nWait for the parent condition"];
+N [label="First vote supports block B\nNotarVote(B)\nBadWindow = false"];
+S [label="First vote supports a skip\nSkipVote\nBadWindow = true", fillcolor="#fff0d6", color="#b47821"];
+R [label="Fallback vote sent\nKeep the first vote\nBadWindow = true", fillcolor="#fff0d6", color="#b47821"];
+F [label="Final vote sent\nFinalVote\nItsOver = true", fillcolor="#d9f4e6", color="#18865e", penwidth=2];
+start [shape=point, width=.08, label=""];
+start -> U [label="V01: Start the slot", tooltip="The validator must select one first vote for this slot.", URL="#why-V01", target="_self"];
+U -> P [label="V02: Parent condition false", tooltip="The validator must not support a child before it has the required parent evidence.", URL="#why-V02", target="_self"];
+U -> N [label="V03: Parent condition true", tooltip="The block extends a chain that this validator can support under the protocol rules.", URL="#why-V03", target="_self"];
+P -> N [label="V04: Parent condition true", tooltip="The missing parent evidence is now available. The block does not need to arrive again.", URL="#why-V04", target="_self"];
+P -> P [label="V05: Keep waiting", tooltip="A new event alone does not make the block safe to support.", URL="#why-V05", target="_self"];
+U -> S [label="V06: Skip this slot", tooltip="This vote helps the network continue to another leader window. One validator's skip vote does not prove that the leader failed.", URL="#why-V06", target="_self"];
+P -> S [label="V07: Skip the pending slot", tooltip="The validator must not later send a different first vote when the missing parent evidence arrives.", URL="#why-V07", target="_self"];
+N -> F [color="#18865e", fontcolor="#116c4a", label="V08: Notar certificate for\nB", tooltip="The certificate proves 60% initial support. The final vote commits this validator to stop fallback support in this slot.", URL="#why-V08", target="_self"];
+N -> R [label="V09: Safe fallback\ncondition", tooltip="The fallback condition excludes a conflicting fast-final result. The extra vote helps the network get a certificate and continue.", URL="#why-V09", target="_self"];
+S -> R [label="V10: SafeToNotar for a\nblock", tooltip="The block now has sufficient evidence for fallback support. The validator can help make it a usable parent.", URL="#why-V10", target="_self"];
+R -> R [label="V11: Another permitted\nfallback", tooltip="Different fallback certificates can help resolve a failed leader window. The first vote remains fixed.", URL="#why-V11", target="_self"];
+F -> F [label="V12: No new vote in this\nslot", tooltip="A final vote must remain a commitment. Reusing its stake for a conflicting fallback would break the finality argument.", URL="#why-V12", target="_self"];
+
+}
