@@ -16,6 +16,7 @@ pub enum ClientId {
     HarmonicFrankendancer,
     FireBAM,
     Raiku,
+    FrankenBAM,
     // If new variants are added, update From<u16> and TryFrom<ClientId>.
     Unknown(u16),
 }
@@ -37,6 +38,7 @@ impl fmt::Display for ClientId {
             Self::HarmonicFrankendancer => write!(f, "HarmonicFrankendancer"),
             Self::FireBAM => write!(f, "FireBAM"),
             Self::Raiku => write!(f, "Raiku"),
+            Self::FrankenBAM => write!(f, "FrankenBAM"),
             Self::Unknown(id) => write!(f, "Unknown({id})"),
         }
     }
@@ -59,6 +61,7 @@ impl From<u16> for ClientId {
             11u16 => Self::HarmonicFrankendancer,
             12u16 => Self::FireBAM,
             13u16 => Self::Raiku,
+            14u16 => Self::FrankenBAM,
             _ => Self::Unknown(client),
         }
     }
@@ -83,7 +86,8 @@ impl TryFrom<ClientId> for u16 {
             ClientId::HarmonicFrankendancer => Ok(11u16),
             ClientId::FireBAM => Ok(12u16),
             ClientId::Raiku => Ok(13u16),
-            ClientId::Unknown(client @ 0u16..=13u16) => Err(format!("Invalid client: {client}")),
+            ClientId::FrankenBAM => Ok(14u16),
+            ClientId::Unknown(client @ 0u16..=14u16) => Err(format!("Invalid client: {client}")),
             ClientId::Unknown(client) => Ok(client),
         }
     }
@@ -116,7 +120,8 @@ mod test {
         assert_eq!(ClientId::from(11u16), ClientId::HarmonicFrankendancer);
         assert_eq!(ClientId::from(12u16), ClientId::FireBAM);
         assert_eq!(ClientId::from(13u16), ClientId::Raiku);
-        for client in 14u16..=u16::MAX {
+        assert_eq!(ClientId::from(14u16), ClientId::FrankenBAM);
+        for client in 15u16..=u16::MAX {
             assert_eq!(ClientId::from(client), ClientId::Unknown(client));
         }
         assert_eq!(u16::try_from(ClientId::SolanaLabs), Ok(0u16));
@@ -133,14 +138,15 @@ mod test {
         assert_eq!(u16::try_from(ClientId::HarmonicFrankendancer), Ok(11u16));
         assert_eq!(u16::try_from(ClientId::FireBAM), Ok(12u16));
         assert_eq!(u16::try_from(ClientId::Raiku), Ok(13u16));
+        assert_eq!(u16::try_from(ClientId::FrankenBAM), Ok(14u16));
 
-        for client in 0..=13u16 {
+        for client in 0..=14u16 {
             assert_eq!(
                 u16::try_from(ClientId::Unknown(client)),
                 Err(format!("Invalid client: {client}"))
             );
         }
-        for client in 14u16..=u16::MAX {
+        for client in 15u16..=u16::MAX {
             assert_eq!(u16::try_from(ClientId::Unknown(client)), Ok(client));
         }
     }
@@ -167,6 +173,7 @@ mod test {
         );
         assert_eq!(format!("{}", ClientId::FireBAM), "FireBAM");
         assert_eq!(format!("{}", ClientId::Raiku), "Raiku");
+        assert_eq!(format!("{}", ClientId::FrankenBAM), "FrankenBAM");
         assert_eq!(format!("{}", ClientId::Unknown(0)), "Unknown(0)");
         assert_eq!(format!("{}", ClientId::Unknown(u16::MAX)), "Unknown(65535)");
     }
